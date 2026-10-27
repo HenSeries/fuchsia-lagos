@@ -1,0 +1,15 @@
+# Large firmware images — regenerate from the stock zip with tools/extract-device-tree.sh
+device-tree/work/
+*.img
+*.bin
+*.zip
+*.xz
+
+# Fuchsia/Zircon source tree (tens of GB) once cloned
+/fuchsia/
+/zircon/
+
+# build output
+/out/
+*.zbi
+*.vboot
