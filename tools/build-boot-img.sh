@@ -30,6 +30,16 @@ python3 "$FUCHSIA/zircon/kernel/phys/linuxboot-embed.py" \
     --output "$PACKED" --shim "$SHIM" "$ZBI"
 echo "packed shim+zbi: $(du -h "$PACKED" | cut -f1)"
 
-# Wrap the self-contained packed image as the boot kernel (ramdisk now irrelevant).
-mkbootimg --header_version 4 --kernel "$PACKED" --out "$OUT"
+# GZIP the kernel. The lagos expdb LK log proved Motorola/MediaTek LK gunzips the
+# boot kernel unconditionally (stock kernel is Image.gz, magic 1f 8b): a raw Image
+# fails with "gzip header is not correct. Error!", LK jumps to an empty kernel
+# buffer, and the 21 s TOPRGU watchdog resets the SoC — our code never ran in
+# attempts 1-5. See docs/11.
+PACKED_GZ="$PACKED.gz"
+gzip -9 -n -c "$PACKED" > "$PACKED_GZ"
+echo "gzipped kernel: $(du -h "$PACKED_GZ" | cut -f1)  (magic: $(head -c 2 "$PACKED_GZ" | xxd -p))"
+
+# Wrap the gzipped self-contained image as the boot kernel (ramdisk irrelevant: the
+# ZBI is embedded inside the shim).
+mkbootimg --header_version 4 --kernel "$PACKED_GZ" --out "$OUT"
 echo "built: $OUT ($(du -h "$OUT" | cut -f1))"
