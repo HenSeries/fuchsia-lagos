@@ -134,3 +134,54 @@ to DRAM), touching only x10–x17 so the PSCI context in x0 survives.
 **Heartbeat on the console**: every 10 s the heartbeat thread prints
 `lagos: heartbeat N s, online cpus mask 0x…`. If those lines appear, timers and the
 scheduler work on CPU 0, and the mask shows which cores are online.
+
+## Attempt 20 RESULT: every secondary stops after the EL drop; CPU 0 gets no timer IRQ
+
+![attempt 20: per-core markers](img/attempt20-cpu-markers.jpg)
+![attempt 20: console](img/attempt20-console.jpg)
+
+- **Per-core squares**: cores 1–7 each show **GREEN, BLUE** and nothing more. They enter
+  our code from PSCI **at EL1** and survive `ArmDropToEl1`, then die before
+  `arm64_secondary_entry`'s first line. That stretch: `vbar_el1 = 0`, caches on, load the
+  page-table globals, TLB invalidate, MAIR/TCR/TTBR, MMU on, `br` to the kernel vaddr, set
+  `tpidr_el1` and **`sp` from `x0`** (the PSCI `context_id`), `bl arm64_secondary_entry`.
+  With `vbar_el1 = 0` any fault there jumps to address 0 and hangs silently.
+- **28 bands**: step 28 (heartbeat thread created) was reached, but no
+  `lagos: heartbeat` line ever printed after 40+ s, and the 30 s SMP timeout never fired.
+  **CPU 0's timer interrupt never arrives.**
+
+## Attempt 21: x0 fallback, finer secondary stages, polled SMP wait + timer/GIC dump
+
+**Hypothesis for the secondaries:** MediaTek's PSCI path doesn't deliver `context_id` in
+`x0`. Linux never relies on it; its secondary entry finds its data by MPIDR. Zircon uses it
+as the new core's stack.
+
+- `platform_start_cpu()` also stores each core's context in
+  `gLagosSecondaryContext[MPIDR.Aff1]`, cleaned to PoC.
+- `arm64_secondary_start` checks `x0`: if bits 63:48 aren't all ones (not a kernel
+  address), it reloads `x0` from that table (`adr_global`, MMU off).
+
+Per-core squares are now 10×10 on a 12-px stride:
+
+| stage | colour | meaning |
+|---|---|---|
+| 0 | GREEN/MAGENTA/RED | entered at EL1 / EL2 / other |
+| 1 | **CYAN** = x0 was a kernel pointer · **RED** = x0 was junk, recovered from the table | |
+| 2 | BLUE | after `ArmDropToEl1` |
+| 3 | YELLOW | MMU on, running at the kernel vaddr (painted through the TTBR0 identity map, rows cleaned with `dc civac`) |
+| 4 | WHITE | `arm64_secondary_entry` (C) |
+| 5 | ORANGE | after `arch_mp_init_percpu` |
+| 6 | GREEN | after `arch_late_init_percpu` |
+
+**CPU 0 timer:** `mp_all_cpu_startup_sync` now **polls** the ready mask against the counter
+for 15 s instead of sleeping on an event, so boot continues even without timer IRQs. It
+prints `lagos[smp-wait]` and `lagos[+3s]` diagnostics:
+
+- system registers: `CurrentEL`, `DAIF`, `ISR_EL1`, `CNTFRQ`, `CNTVCT`/`CNTV_CTL`/`CNTV_CVAL`,
+  `CNTPCT`/`CNTP_CTL`, `ICC_SRE`/`IGRPEN1`/`PMR`/`CTLR`/`HPPIR1`/`RPR`
+- GICD `CTLR`/`TYPER`/`IIDR`, and the GICR frame of CPU 0 (`CTLR`, `TYPER`, `WAKER`,
+  `IGROUPR0`, `ISENABLER0`, `ISPENDR0`, `ISACTIVER0`, `ICFGR1`, `IGRPMODR0`, `IPRIORITYR6`)
+  mapped with `VmAspace::AllocPhysical`
+
+Then `lagos: smp wait done after N ms, ready … online …`, then the stock oops if cores are
+missing.
