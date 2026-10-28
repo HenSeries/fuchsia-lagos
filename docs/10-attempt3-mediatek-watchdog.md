@@ -80,3 +80,28 @@ Same pipeline as attempt 2: `fx build` → `tools/build-boot-img.sh` (packs the 
 shim+ZBI) → flash `boot_a` → observe. Success = **the bootloop stops**: the device sits
 (black screen — bringup has no display driver) instead of cycling through the preloader.
 Recovery unchanged (`dist/boot_a.trebledroid.backup.img` via antumbra).
+
+## Attempt 3 RESULT (2026-10-28): still bootloops
+
+Flashed the watchdog-aware build → **still cycling** (8 preloader↔quiet transitions in
+60 s, same ~15–20 s period). So the ZBI-item path alone did not help. That is itself
+informative: that path only works if **Zircon's kernel gets far enough to run its
+generic32 watchdog driver and pet the WDT**. Identical looping means either the shim /
+physboot dies or hangs *before* the kernel handoff (so nobody ever pets it), or the ~20 s
+reset isn't the TOPRGU at all.
+
+## Attempt 4: disable the WDT as the very first instruction
+
+To separate those two, the shim now disables the watchdog **unconditionally, first thing
+in `PhysMain`, before constructing the shim or parsing the DTB** — a raw physical write of
+`0x22000000` (key | EN=0) to `WDT_MODE` at the known base `0x10007000`. Safe because the
+MMU is off at phys entry (`arch/arm64/phys/start.S`: "The caches and MMU are disabled").
+Uses the same `MmioWrite32` primitive as `WatchdogMmioHelper`.
+
+Outcomes this discriminates:
+
+| observed | meaning |
+|---|---|
+| loop **stops**, device stays quiet (black) | the TOPRGU WDT was the reset source and the kernel just never reached the pet; the shim is at least running. Quiet = Fuchsia running **or** shim hung — UART tells which |
+| still loops at ~20 s | the reset is **not** the TOPRGU (preloader timeout / other reset source) **or** the shim faults instantly before this write even matters → points at DTB parse / LK handoff |
+| loop period **changes** | a different reset path took over — also informative |
