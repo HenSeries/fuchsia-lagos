@@ -36,3 +36,41 @@ background. Count the bands:
 
 A blinking strip is the strongest single signal: it needs timer interrupts delivered
 through the GIC and the scheduler waking a sleeping thread.
+
+## Attempt 13 RESULT (verified flash 11:00:27): GRAY, **no bands**
+
+The screen went through the shim/physboot colours to GRAY and stayed there; no band, no
+blinking strip. USB stayed quiet for 3 minutes (no panic-reboot). So the kernel enters
+`lk_main` but never reaches the top of `bootstrap2`: it hangs somewhere inside `lk_main`'s
+early init.
+
+## Attempt 14: bisect `lk_main` with 20 numbered steps
+
+`LagosStep(k)` paints a 60-row band at row `(k-1)*64` (4-row black gap between bands).
+Colours cycle **green, blue, yellow, red, cyan, magenta, white, orange**, so the band count
+plus the last colour identifies the step.
+
+| step | after… |
+|---|---|
+| 1 | `thread_init_early`, `dlog_init_early`, `CallConstructors` |
+| 2 | init level EARLIEST → ARCH_EARLY-1 |
+| 3 | `arch_early_init` |
+| 4 | init level ARCH_EARLY → PLATFORM_EARLY-1 |
+| 5 | `platform_early_init` (ZBI driver items: GIC, timer, PSCI, UART…) |
+| 6 | `DriverHandoffEarly` |
+| 7 | init level PLATFORM_EARLY → ARCH_PREVM-1 |
+| 8 | `arch_prevm_init` + its init level |
+| 9 | `platform_prevm_init` + its init level |
+| 10 | `vm_init_preheap` + level |
+| 11 | `heap_init` + level |
+| 12 | `vm_init` + level |
+| 13 | `DriverHandoffPostVm` + INTC level |
+| 14 | lockup detector, sampler, `topology_init` + level |
+| 15 | `kernel_init` + level |
+| 16 | `bootstrap2` thread created and resumed (next: `BecomeIdle`) |
+| 17 | top of `bootstrap2` (scheduler switched threads) |
+| 18 | `arch_init` + `platform_init` + `DriverHandoffLate` done; heartbeat starts |
+| 19 | late per-CPU init done, starting userboot |
+| 20 | `userboot_init` returned: userspace launched |
+
+Bottom strip (rows 1440–1640) blinks white/black every 500 ms once step 18 is reached.
