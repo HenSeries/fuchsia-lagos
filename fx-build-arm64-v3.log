@@ -8,3 +8,11 @@ Timing results for regeneration steps slower than 0.500 seconds:
 9.582s   gn gen
 0.576s   @fuchsia_in_tree_idk
 3.037s   bazel_warm_up
+Building 50 targets using //build/bazel/platforms:host
+Building 50 targets using //build/bazel/platforms:host
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_arm64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_arm64
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_arm64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_arm64
+Build completed.
+=== fx build exit=0 mar 27 oct 2026 23:40:48 -05 ===
