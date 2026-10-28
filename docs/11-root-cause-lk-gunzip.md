@@ -122,9 +122,20 @@ LK gunzipped our kernel, jumped into it, and our first-instruction watchdog disa
 executed. **This is the first time our code has ever run on lagos.** The gunzip root cause
 is confirmed.
 
-What it does *not* settle: whether Zircon is actually up (black — no display driver) or
-the shim/physboot hung after the jump (also black — watchdog is off, so no reset). Those
-are indistinguishable without the serial console. Final 4-minute observer window and the
+**On-screen behaviour (correcting an earlier prediction):** the device sits **on the Moto
+logo**, not a black screen. LK draws the logo into the framebuffer and does *not* turn the
+panel off when it jumps to the kernel — the kernel inherits it. The "black" seen in
+attempts 1–5 was the **reset instant** (the preloader re-initialises the panel on every
+WDT reboot). With no reset, the last LK frame simply stays. So "stuck on the Moto logo,
+never rebooting" is what *our code running without a display driver* looks like — don't
+read it as a bootloader hang by itself.
+
+What it does *not* settle: whether Zircon is actually up or the shim/physboot hung after
+the jump (watchdog is off, so no reset either way), nor — strictly — whether LK itself
+stalled somewhere it keeps kicking the WDT. The LK log of *this* boot in `expdb` settles
+the LK question (`decompress_kernel takes N ms` with no gzip error, followed by the
+spmfw/scp/modem steps and the jump = LK handed off); only the serial console settles
+Zircon's state. Final 4-minute observer window and the
 on-screen behaviour pending at the time of writing; the LK log for *this* boot can be
 read from `expdb` after restoring TrebleDroid (expect `decompress_kernel takes N ms` with
 no gzip error, then the jump — LK's log ends there, so it can't show Zircon's state).
