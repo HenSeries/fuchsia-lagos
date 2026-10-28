@@ -89,3 +89,48 @@ entering panic shell loop
   MediaTek routes SPI polarity through its `sysirq`/intpol block, which nothing here
   programs.
 - DTB file `lagos-min-v5.dtb`; verified in the shim (2459-byte FDT, poll option present).
+
+## Attempt 19 RESULT (verified flash): past the UART; hangs waiting for the secondaries
+
+![attempt 19: console stops at mp_all_cpu_startup_sync](img/attempt19-smp-wait.jpg)
+
+`UART: POLLING mode enabled.` The UART panic is gone. Boot continues through the debuglog
+hook, `idle_power_thread_platform`, `Using Generic timer for suspend-wakeup`,
+`initializing late arch` and `SMCCC_ARCH_WORKAROUND ... not needed`. The newest line, just
+above the red bar, is:
+
+```
+INIT: cpu 0, calling hook 0xffffffff00476cc8 "mp_all_cpu_startup_sync" at level 0xd4000, flags 0x1
+```
+
+That hook waits for every CPU to check in, with a **30 s** timeout. On this debug kernel
+(`kernel_debug_level: 2`) a timeout prints an oops and boot continues. Two facts:
+
+- None of the 7 secondaries ever printed anything (`arm64_feature_debug` prints
+  `ARM cpu N: midr …` for the first core of each cluster). PSCI `CPU_ON` returned 0 for all
+  of them, so they were powered and started somewhere, then died before that print.
+- If the screen stays frozen on that line past 30 s, the boot CPU's **timer interrupt**
+  isn't waking it either.
+
+Also from the boot CPU: `ARM boot EL1`, `ARM cpu 0: midr 0x411fd050 'ARM Cortex-A55 r1p0'
+mpidr 0x81000000`, `VHE 1, E2H0 1`.
+
+## Attempt 20: per-core markers + timer heartbeat on the console
+
+**Per-core squares**: row 480 (between the bands and the console), 14×14 px, column
+`core*90 + stage*16`, core = MPIDR.Aff1. Core 0's slot stays empty; it's the boot CPU.
+
+| stage | painted from | colour | meaning |
+|---|---|---|---|
+| 0 | `secondary.S`, first instructions, MMU off | **GREEN** = arrived at EL1, **MAGENTA** = EL2, RED = other | PSCI really entered our code |
+| 1 | `secondary.S`, after `ArmDropToEl1`, MMU off | BLUE | EL drop OK |
+| 2 | `arm64_secondary_entry` (C, MMU on) | YELLOW | MMU enable + jump to the kernel's virtual address OK |
+| 3 | after `arch_mp_init_percpu` | WHITE | per-CPU GIC/IRQ init OK |
+| 4 | `lk_secondary_cpu_entry` after `arch_late_init_percpu` | ORANGE | fully up |
+
+Stages 0–1 are written in assembly as physical stores (MMU off → Device memory → straight
+to DRAM), touching only x10–x17 so the PSCI context in x0 survives.
+
+**Heartbeat on the console**: every 10 s the heartbeat thread prints
+`lagos: heartbeat N s, online cpus mask 0x…`. If those lines appear, timers and the
+scheduler work on CPU 0, and the mask shows which cores are online.
