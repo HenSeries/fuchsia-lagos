@@ -74,3 +74,37 @@ plus the last colour identifies the step.
 | 20 | `userboot_init` returned: userspace launched |
 
 Bottom strip (rows 1440–1640) blinks white/black every 500 ms once step 18 is reached.
+
+## Attempt 14 RESULT (verified flash 11:09:35): **5 bands**, rest of the screen gray
+
+Steps 1–5 ran: constructors, the EARLIEST and ARCH_EARLY init levels, `arch_early_init`
+and **`platform_early_init`**. Step 6 (after `DriverHandoffEarly`) never painted. USB stayed
+quiet (no reset). So the kernel hangs (or panics silently, before PSCI is up) inside
+`DriverHandoffEarly`, which runs, in order:
+
+1. `UartDriverHandoffEarly` (null console here)
+2. `ArmGicInitEarly` → `rust_arm_gicv3_init_early`: only stores the GIC addresses;
+   can only fail on `assert!(config.mmio_phys != 0)`
+3. `generic_32bit_watchdog_early_init` (skipped: no watchdog node in `lagos-min.dts`)
+4. `ArmGenericTimerInit` → `arm_generic_timer_init` (picks virt/phys timer from the ZBI
+   IRQs; panics if none; hard-stops if CNTFRQ is 0)
+5. `PsciInit` (first SMC calls into MediaTek's ATF)
+
+## Attempt 15: bisect `DriverHandoffEarly`
+
+New steps 6–10 sit inside it (`dev/init.cc`, `platform/generic-arm/dev-init.cc`), through
+an external `LagosKernelStep()` wrapper. Old steps 6–20 shift to 11–25. Bands are now 52
+rows on a 56-row stride so 25 steps fit above the heartbeat strip.
+
+| step | after… |
+|---|---|
+| 1–5 | as attempt 14 (5 = `platform_early_init`) |
+| 6 | UART handoff (null console) |
+| 7 | GIC early init |
+| 8 | watchdog early init (absent) |
+| 9 | ARM generic timer init |
+| 10 | PSCI init |
+| 11–25 | old steps 6–20 (11 = `DriverHandoffEarly` returned … 22 = top of `bootstrap2` … 25 = userspace) |
+
+Colour cycle unchanged: green, blue, yellow, red, cyan, magenta, white, orange. Verified in
+the binary: the inlined paints start at rows 280, 336, 392, 448, 504 (steps 6–10).
