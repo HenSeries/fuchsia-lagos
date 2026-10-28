@@ -184,18 +184,18 @@ index 0f622fa45ca..9860f9acce3 100644
    shim_helper.Boot();
  }
 diff --git a/zircon/kernel/arch/arm64/secondary.S b/zircon/kernel/arch/arm64/secondary.S
-index ec94bb54425..f61baaa14ab 100644
+index ec94bb54425..6e2706f2776 100644
 --- a/zircon/kernel/arch/arm64/secondary.S
 +++ b/zircon/kernel/arch/arm64/secondary.S
-@@ -29,6 +29,46 @@ resume_context          .req x24
+@@ -29,6 +29,49 @@ resume_context          .req x24
  // that need boot-time fixup.
  
  // void arm64_secondary_resume_start(void* resume_context);
 +
 +// [fuchsia-lagos] Per-core progress markers for the Moto G06 (no UART tap).
-+// Paint a 14x14 square for this core into LK's framebuffer while the MMU is
-+// still off (physical writes, Device memory: straight to DRAM). Row 480,
-+// column core*90 + stage*16, core = MPIDR.Aff1 (MT6768 is DynamIQ). All three
++// Paint a 10x10 square for this core into LK's framebuffer at its PHYSICAL
++// address: MMU off (Device memory), or MMU on through the TTBR0 identity map
++// (each row is cleaned to PoC). Row 480, column core*90 + stage*12, core = MPIDR.Aff1 (MT6768 is DynamIQ). All three
 +// frame slots. Clobbers x10-x17 only (x0 carries the PSCI context and must
 +// survive). Colour is in w11. See fuchsia-lagos/docs/15.
 +.macro LAGOS_MARK_FRAME base, pitch
@@ -205,14 +205,17 @@ index ec94bb54425..f61baaa14ab 100644
 +  mov x13, #(\pitch)
 +  mov x14, #480
 +  madd x12, x14, x13, x12
-+  mov x15, #14
++  mov x15, #10
 +1:
-+  mov x16, #14
++  mov x16, #10
 +  mov x17, x12
 +2:
 +  str w11, [x17], #4
 +  subs x16, x16, #1
 +  b.ne 2b
++  dc civac, x12
++  add x17, x12, #36
++  dc civac, x17
 +  add x12, x12, x13
 +  subs x15, x15, #1
 +  b.ne 1b
@@ -223,7 +226,7 @@ index ec94bb54425..f61baaa14ab 100644
 +  ubfx x10, x10, #8, #8
 +  mov x14, #90
 +  mul x10, x10, x14
-+  add x10, x10, #((\stage) * 16)
++  add x10, x10, #((\stage) * 12)
 +  lsl x10, x10, #2
 +  LAGOS_MARK_FRAME 0x781b0000, 2944
 +  LAGOS_MARK_FRAME 0x7865c000, 2880
@@ -234,7 +237,7 @@ index ec94bb54425..f61baaa14ab 100644
  .function arm64_secondary_resume_start, global
    // Save the resume_context arg so we can later check whether this is a boot up
    // or a resume.
-@@ -43,6 +83,22 @@ resume_context          .req x24
+@@ -43,6 +86,42 @@ resume_context          .req x24
    mov resume_context, xzr
  
  .Lsecondary_start_common:
@@ -254,33 +257,66 @@ index ec94bb54425..f61baaa14ab 100644
 +  movk w11, #0xffff, lsl #16
 +3:
 +  LAGOS_CPU_MARK 0
++  // [fuchsia-lagos] stage 1: is x0 (the PSCI context_id = our arm64_sp_info
++  // pointer) a kernel address? CYAN = yes. RED = no: MediaTek's firmware did
++  // not pass context_id through (Linux never uses it), so recover it from the
++  // table the boot CPU fills in platform_start_cpu(), indexed by MPIDR.Aff1.
++  asr x10, x0, #48        // == -1 iff x0[63:48] are all ones (kernel address)
++  cmn x10, #1
++  b.ne 4f
++  movz w11, #0xffff
++  movk w11, #0xff00, lsl #16
++  LAGOS_CPU_MARK 1
++  b 5f
++4:
++  movz w11, #0x0000
++  movk w11, #0xffff, lsl #16
++  LAGOS_CPU_MARK 1
++  mrs x10, mpidr_el1
++  ubfx x10, x10, #8, #8
++  adr_global x11, gLagosSecondaryContext
++  ldr x0, [x11, x10, lsl #3]
++5:
    // If we entered at a higher EL than 1, drop to EL1.
    //
    // Make sure to clear the stack pointer first. The call will reuse in EL1
-@@ -51,6 +107,10 @@ resume_context          .req x24
+@@ -51,6 +130,10 @@ resume_context          .req x24
    mov tmp, xzr
    mov sp, tmp
    bl ArmDropToEl1
-+  // [fuchsia-lagos] stage 1 BLUE: now at EL1, MMU still off.
++  // [fuchsia-lagos] stage 2 BLUE: now at EL1, MMU still off.
 +  movz w11, #0x00ff
 +  movk w11, #0xff00, lsl #16
-+  LAGOS_CPU_MARK 1
++  LAGOS_CPU_MARK 2
  
    // Make sure no old exception handlers are installed.
    msr vbar_el1, xzr
+@@ -142,6 +225,12 @@ resume_context          .req x24
+   // not SP_EL0.
+   msr SPSel, #1
+ 
++  // [fuchsia-lagos] stage 3 YELLOW: MMU on, running at the kernel vaddr.
++  // x0 must survive: LAGOS_CPU_MARK only touches x10-x17.
++  movz w11, #0xff00
++  movk w11, #0xffff, lsl #16
++  LAGOS_CPU_MARK 3
++
+   // Now that we've set up the most basic architectural state, it's time to
+   // determine if we're booting up or resuming from suspend and finish the job.
+   cbnz resume_context,.Lresume
 diff --git a/zircon/kernel/arch/arm64/secondary.cc b/zircon/kernel/arch/arm64/secondary.cc
-index 48b03eccacb..aee3f321fe3 100644
+index 48b03eccacb..ab523e3746b 100644
 --- a/zircon/kernel/arch/arm64/secondary.cc
 +++ b/zircon/kernel/arch/arm64/secondary.cc
 @@ -95,7 +95,11 @@ zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num) {
  // called from assembly.
  extern "C" void arm64_secondary_entry();
  
-+// [fuchsia-lagos] zircon/kernel/top/main.cc: per-core marker (stage 2..4).
++// [fuchsia-lagos] zircon/kernel/top/main.cc: per-core marker (stages 4..6).
 +void LagosCpuMark(int stage, uint32_t bgra);
 +
  extern "C" void arm64_secondary_entry() {
-+  LagosCpuMark(2, 0xFFFFFF00);  // [fuchsia-lagos] stage 2 YELLOW: C entry, MMU on
++  LagosCpuMark(4, 0xFFFFFFFF);  // [fuchsia-lagos] stage 4 WHITE: C entry
    arm64_cpu_early_init();
  
    cpu_num_t cpu = arch_curr_cpu_num();
@@ -288,7 +324,7 @@ index 48b03eccacb..aee3f321fe3 100644
    lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_THREADING - 1);
  
    arch_mp_init_percpu();
-+  LagosCpuMark(3, 0xFFFFFFFF);  // [fuchsia-lagos] stage 3 WHITE: per-cpu GIC/IRQ init done
++  LagosCpuMark(5, 0xFFFF8000);  // [fuchsia-lagos] stage 5 ORANGE: per-cpu GIC/IRQ init done
  
    const bool full_dump = arm64_feature_current_is_first_in_cluster();
    arm64_feature_debug(full_dump);
@@ -312,6 +348,114 @@ index 071e7934fac..2e8903f65a5 100644
    PlatformDriverHandoffEarly(handoff.arch_handoff);
  }
  
+diff --git a/zircon/kernel/kernel/mp.cc b/zircon/kernel/kernel/mp.cc
+index df739487fa6..1dc3f49d0ec 100644
+--- a/zircon/kernel/kernel/mp.cc
++++ b/zircon/kernel/kernel/mp.cc
+@@ -512,6 +512,66 @@ zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline) {
+   return mp.ready_cpu_event.Wait(deadline);
+ }
+ 
++
++#if defined(__aarch64__)
++// [fuchsia-lagos] Timer/GIC diagnostics for the Moto G06: on attempt 20 the
++// boot CPU never woke from this hook's 30 s wait (no timer interrupt), and the
++// heartbeat thread never ran. Print what the CPU and the GIC see, via the
++// framebuffer console. See fuchsia-lagos/docs/15.
++#include <vm/vm_aspace.h>
++
++namespace {
++#define LAGOS_MRS(reg)                                  \
++  ({                                                    \
++    uint64_t _v;                                        \
++    __asm__ volatile("mrs %0, " #reg : "=r"(_v));       \
++    _v;                                                 \
++  })
++
++void LagosSmpDiag(const char* when) {
++  printf("lagos[%s]: EL%lu DAIF %#lx ISR %#lx CNTFRQ %lu\n", when,
++         (LAGOS_MRS(CurrentEL) >> 2) & 3, LAGOS_MRS(DAIF), LAGOS_MRS(ISR_EL1),
++         LAGOS_MRS(CNTFRQ_EL0));
++  printf("lagos[%s]: CNTVCT %#lx CNTV_CTL %#lx CNTV_CVAL %#lx | CNTPCT %#lx CNTP_CTL %#lx\n",
++         when, LAGOS_MRS(CNTVCT_EL0), LAGOS_MRS(CNTV_CTL_EL0), LAGOS_MRS(CNTV_CVAL_EL0),
++         LAGOS_MRS(CNTPCT_EL0), LAGOS_MRS(CNTP_CTL_EL0));
++  printf("lagos[%s]: ICC SRE %#lx IGRPEN1 %#lx PMR %#lx CTLR %#lx HPPIR1 %#lx RPR %#lx\n", when,
++         LAGOS_MRS(S3_0_C12_C12_5), LAGOS_MRS(S3_0_C12_C12_7), LAGOS_MRS(S3_0_C4_C6_0),
++         LAGOS_MRS(S3_0_C12_C12_4), LAGOS_MRS(S3_0_C12_C12_2), LAGOS_MRS(S3_0_C12_C11_3));
++
++  static volatile uint32_t* gicd = nullptr;
++  static volatile uint32_t* gicr = nullptr;
++  if (gicd == nullptr) {
++    void* p = nullptr;
++    if (VmAspace::kernel_aspace()->AllocPhysical(
++            "lagos-gicd", 0x10000, &p, PAGE_SIZE_SHIFT, 0x0c000000, 0,
++            ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ) == ZX_OK) {
++      gicd = static_cast<volatile uint32_t*>(p);
++    }
++    p = nullptr;
++    if (VmAspace::kernel_aspace()->AllocPhysical(
++            "lagos-gicr0", 0x20000, &p, PAGE_SIZE_SHIFT, 0x0c040000, 0,
++            ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ) == ZX_OK) {
++      gicr = static_cast<volatile uint32_t*>(p);
++    }
++  }
++  if (gicd != nullptr) {
++    printf("lagos[%s]: GICD CTLR %#x TYPER %#x IIDR %#x\n", when, gicd[0x0 / 4], gicd[0x4 / 4],
++           gicd[0x8 / 4]);
++  }
++  if (gicr != nullptr) {
++    volatile uint32_t* sgi = gicr + 0x10000 / 4;
++    printf("lagos[%s]: GICR0 CTLR %#x TYPER %#x_%08x WAKER %#x\n", when, gicr[0x0 / 4],
++           gicr[0xc / 4], gicr[0x8 / 4], gicr[0x14 / 4]);
++    printf("lagos[%s]: GICR0 IGROUPR0 %#x ISENABLER0 %#x ISPENDR0 %#x ISACTIVER0 %#x\n", when,
++           sgi[0x80 / 4], sgi[0x100 / 4], sgi[0x200 / 4], sgi[0x300 / 4]);
++    printf("lagos[%s]: GICR0 ICFGR1 %#x IGRPMODR0 %#x IPRIORITYR6 %#x (PPI 27 = vtimer)\n", when,
++           sgi[0xc04 / 4], sgi[0xd00 / 4], sgi[0x418 / 4]);
++  }
++}
++}  // namespace
++#endif
++
+ namespace {
+ 
+ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
+@@ -525,7 +585,36 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
+   // the CPU silicon (something which can only be determined by the core itself
+   // as it comes up).
+   constexpr zx_duration_mono_t kCpuStartupTimeout = ZX_SEC(30);
++#if defined(__aarch64__)
++  // [fuchsia-lagos] Poll instead of blocking: a blocked wait needs the timer
++  // interrupt to ever time out, and on lagos it never fires (attempt 20). The
++  // counter itself works, so spin on the ready mask with a counter deadline
++  // and dump timer/GIC state at the start and 3 s in.
++  zx_status_t status = ZX_ERR_TIMED_OUT;
++  {
++    const int max_count = static_cast<int>(arch_max_num_cpus());
++    LagosSmpDiag("smp-wait");
++    const zx_instant_mono_t start = current_mono_time();
++    bool second = false;
++    while (current_mono_time() - start < ZX_SEC(15)) {
++      if (ktl::popcount(mp.ready_cpu_mask.load(ktl::memory_order_relaxed)) >= max_count) {
++        status = ZX_OK;
++        break;
++      }
++      if (!second && current_mono_time() - start > ZX_SEC(3)) {
++        LagosSmpDiag("+3s");
++        second = true;
++      }
++      arch::Yield();
++    }
++    printf("lagos: smp wait done after %ld ms, ready %#x online %#x\n",
++           (current_mono_time() - start) / ZX_MSEC(1),
++           static_cast<unsigned>(mp.ready_cpu_mask.load(ktl::memory_order_relaxed)),
++           static_cast<unsigned>(mp_get_online_mask()));
++  }
++#else
+   zx_status_t status = mp_wait_for_all_cpus_ready(Deadline::after_mono(kCpuStartupTimeout));
++#endif
+   if (status == ZX_OK) {
+     return;
+   }
 diff --git a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h b/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
 index aca718b65d5..2024e37ce7c 100644
 --- a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
@@ -720,8 +864,36 @@ index 25c6e727f56..01038c71db5 100644
  
    if (arch_handoff.motmot_power_driver) {
      motmot_power_init_early();
+diff --git a/zircon/kernel/platform/generic-arm/platform.cc b/zircon/kernel/platform/generic-arm/platform.cc
+index 60ebb7ea207..0db51ba0d2b 100644
+--- a/zircon/kernel/platform/generic-arm/platform.cc
++++ b/zircon/kernel/platform/generic-arm/platform.cc
+@@ -312,7 +312,23 @@ zx_status_t platform_suspend_system() {
+   return suspend_status;
+ }
+ 
++// [fuchsia-lagos] Fallback for arm64_secondary_start when the firmware does not
++// deliver the PSCI context_id in x0: the context (arm64_sp_info pointer) for
++// the core with MPIDR.Aff1 == i. Read by the secondary with the MMU off, so
++// each entry is cleaned to PoC. See fuchsia-lagos/docs/15.
++extern "C" {
++alignas(64) uint64_t gLagosSecondaryContext[8];
++}
++
+ zx_status_t platform_start_cpu(cpu_num_t cpu_id, uint64_t mpid, uint64_t context) {
++  {
++    const uint64_t core = (mpid >> 8) & 0xff;
++    if (core < 8) {
++      gLagosSecondaryContext[core] = context;
++      arch_clean_cache_range(reinterpret_cast<vaddr_t>(&gLagosSecondaryContext[core]),
++                             sizeof(uint64_t));
++    }
++  }
+   // TODO(https://fxbug.dev/450973098): Considering modeling offline CPUs as already in the control
+   // region.
+   gControlRegion.Register();
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..38da384342c 100644
+index fdd8b1b7e58..a96c828c688 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
 @@ -30,9 +30,11 @@
@@ -823,14 +995,14 @@ index fdd8b1b7e58..38da384342c 100644
 +// [fuchsia-lagos] Callable from other kernel files (driver handoff bisect).
 +void LagosKernelStep(int k) { LagosStep(k); }
 +
-+// [fuchsia-lagos] Per-core marker: a 14x14 square at row 480, column
-+// core*90 + stage*16 (core = MPIDR.Aff1). Stages 0-1 are painted from
-+// arch/arm64/secondary.S with the MMU off; 2-4 from C.
++// [fuchsia-lagos] Per-core marker: a 10x10 square at row 480, column
++// core*90 + stage*12 (core = MPIDR.Aff1). Stages 0-3 are painted from
++// arch/arm64/secondary.S; 4-6 from C.
 +void LagosCpuMark(int stage, uint32_t bgra) {
 +  uint64_t mpidr;
 +  __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
-+  const uint32_t col0 = static_cast<uint32_t>((mpidr >> 8) & 0xff) * 90 + stage * 16;
-+  LagosFillRect(480, 494, col0, col0 + 14, bgra);
++  const uint32_t col0 = static_cast<uint32_t>((mpidr >> 8) & 0xff) * 90 + stage * 12;
++  LagosFillRect(480, 490, col0, col0 + 10, bgra);
 +}
 +#endif
 +
@@ -1056,7 +1228,7 @@ index fdd8b1b7e58..38da384342c 100644
    // late CPU initialization for secondary CPUs
    arch_late_init_percpu();
 +#if defined(__aarch64__)
-+  LagosCpuMark(4, 0xFFFF8000);  // [fuchsia-lagos] stage 4 ORANGE: late per-cpu init done
++  LagosCpuMark(6, 0xFF00FF00);  // [fuchsia-lagos] stage 6 GREEN: late per-cpu init done
 +#endif
  
    // secondary cpu initialize from threading level up. 0 to threading was handled in arch
