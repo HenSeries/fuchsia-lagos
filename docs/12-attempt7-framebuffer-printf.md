@@ -93,6 +93,33 @@ A third paint, **YELLOW** (`0xFFFFFF00`), goes right after the constructor:
 | **YELLOW** | memory parsed and MMU up; died in `InitItems()` (GIC / timer / UART / CPU matchers) |
 | **BLUE** | the whole devicetree path works → `Boot()` → physboot/Zircon is the next frontier |
 
+## Attempt 8 RESULT (verified flash, 2026-10-28 10:21): still **GREEN**
+
+(If the colour were going to change it would do so well under a second after green — the
+constructor runs immediately after the paint — so a minute of green is final.)
+
+The clean embedded DTB **did not change the outcome**: the shim still dies inside
+`BootShimHelper`'s constructor. That rules out the MediaTek DTB's content as the cause.
+What the constructor does regardless of which DTB it gets: builds the memory pool from
+`/memory` (plus the DTB/ramdisk/image "special ranges") and then **enables the MMU**
+(`enable_mmu = true`). And there is a confound in our own instrumentation: the YELLOW
+paint sits *after* the MMU comes up — if the framebuffer bank didn't get mapped, the paint
+itself faults, and that also leaves the screen green.
+
+Two suspects remain, and one experiment separates them.
+
+## Attempt 9: run the shim with the MMU off
+
+`kOptions.enable_mmu = false` — a supported mode (physboot sets up its own MMU afterwards).
+With the MMU off every paint is a physical write that cannot fault on mapping, so the
+colours become an unambiguous progress bar through the shim:
+
+| screen ends as | meaning |
+|---|---|
+| GREEN | the constructor dies for a non-MMU reason (devicetree match assert, memalloc pool, special ranges) |
+| **YELLOW** | constructor fine; `InitItems()` dies (GIC / timer / UART / CPU matchers) |
+| **BLUE** | the whole shim works MMU-off → **the MMU enable (or the post-MMU FB mapping) was the bug** → `Boot()` → physboot |
+
 ### Operational lesson from the first attempt-8 flash (2026-10-28 10:18)
 
 `fastboot flash boot_a` reported `Sending OKAY` and then
