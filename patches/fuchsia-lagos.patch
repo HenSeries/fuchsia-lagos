@@ -327,7 +327,7 @@ index 5807894b5a0..57d5279b56e 100644
  }  // namespace boot_shim
  
 diff --git a/zircon/kernel/phys/physboot.cc b/zircon/kernel/phys/physboot.cc
-index 7dcc03863c6..021382e6bf4 100644
+index 7dcc03863c6..2089389aa70 100644
 --- a/zircon/kernel/phys/physboot.cc
 +++ b/zircon/kernel/phys/physboot.cc
 @@ -54,6 +54,29 @@ enum ModuleId : unsigned int {
@@ -376,16 +376,25 @@ index 7dcc03863c6..021382e6bf4 100644
  
    // Symbolize uses its output for the panic path.  So that should not be
    // redirected to the log code path.  Instead keep it pointed at a copy of the
-@@ -161,6 +186,7 @@ void RelocateElfKernel(ElfImage& kernel) {
+@@ -161,6 +186,16 @@ void RelocateElfKernel(ElfImage& kernel) {
  
    AddressSpace aspace;
    InitMemory(zbi_ptr, ktl::move(zbi), &aspace);
 +  LagosPhysbootPaint(kLagosOrange);  // [fuchsia-lagos]
++#if defined(__aarch64__)
++  // [fuchsia-lagos] Attempt 13: take LK's framebuffer bank out of free RAM so
++  // the kernel's PMM never hands those pages out. kTestRamReserve is passed
++  // through the handoff and lands on the PMM's permanently-reserved list, but
++  // it is still a RAM type, so the kernel physmap keeps covering it and the
++  // kernel can paint progress bands late in boot. See fuchsia-lagos/docs/14.
++  (void)Allocation::GetPool().UpdateRamSubranges(memalloc::Type::kTestRamReserve,
++                                                 uint64_t{0x781b0000}, uint64_t{0x1050000});
++#endif
  
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..e42dd096799 100644
+index fdd8b1b7e58..586faed5720 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
 @@ -30,6 +30,7 @@
@@ -396,7 +405,67 @@ index fdd8b1b7e58..e42dd096799 100644
  #include <dev/init.h>
  #include <kernel/cpu.h>
  #include <kernel/init.h>
-@@ -87,6 +88,23 @@ void lk_main(PhysHandoff* handoff) {
+@@ -59,6 +60,59 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
+ 
+ static uint secondary_idle_thread_count;
+ 
++#if defined(__aarch64__)
++// [fuchsia-lagos] Framebuffer progress bar for the Moto G06 (no UART tap).
++// LK's framebuffer: 0x781b0000, BGRA8888, 720x1640, three frame slots with
++// different pitches (the visible overlay layer is unknown, so paint all three).
++// Physboot reserves this bank (kTestRamReserve), so the PMM never allocates
++// it and the physmap still covers it. See fuchsia-lagos/docs/14.
++namespace {
++constexpr uint64_t kLagosFb = 0x781b0000;
++struct LagosFrame {
++  uint64_t offset;
++  uint32_t pitch;
++};
++constexpr LagosFrame kLagosFrames[] = {{0, 2944}, {0x4ac000, 2880}, {0x958000, 2944}};
++constexpr uint32_t kLagosRows = 1640;
++constexpr uint32_t kLagosCols = 720;
++
++void LagosFillRows(uint32_t row0, uint32_t row1, uint32_t bgra) {
++  if (gPhysHandoff == nullptr) {
++    return;
++  }
++  for (const LagosFrame& f : kLagosFrames) {
++    const uintptr_t base = gPhysHandoff->physmap_base + kLagosFb + f.offset;
++    for (uint32_t r = row0; r < row1 && r < kLagosRows; ++r) {
++      auto* row = reinterpret_cast<volatile uint32_t*>(base + uint64_t{r} * f.pitch);
++      for (uint32_t c = 0; c < kLagosCols; ++c) {
++        row[c] = bgra;
++      }
++    }
++    if (row1 > row0) {
++      arch_clean_cache_range(static_cast<vaddr_t>(base + uint64_t{row0} * f.pitch),
++                             static_cast<size_t>(row1 - row0) * f.pitch);
++    }
++  }
++}
++
++// Band k (1-based) occupies rows [(k-1)*160, k*160): a stage counter you can
++// read off the screen.
++void LagosBand(int k, uint32_t bgra) {
++  LagosFillRows(static_cast<uint32_t>(k - 1) * 160, static_cast<uint32_t>(k) * 160, bgra);
++}
++
++// Heartbeat: the bottom strip alternates white/black every 500 ms. It only
++// blinks if the scheduler, the arch timer and GIC interrupts all work.
++int LagosHeartbeat(void*) {
++  for (bool on = true;; on = !on) {
++    LagosFillRows(1440, kLagosRows, on ? 0xFFFFFFFF : 0xFF000000);
++    Thread::Current::SleepRelative(ZX_MSEC(500));
++  }
++  return 0;
++}
++}  // namespace
++#endif
++
+ static int bootstrap2(void* arg);
+ 
+ KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
+@@ -87,6 +141,23 @@ void lk_main(PhysHandoff* handoff) {
    // After PostHandoffBootstrap(), gPhysHandoff should now be set.
    ZX_DEBUG_ASSERT(gPhysHandoff != nullptr);
  
@@ -420,6 +489,51 @@ index fdd8b1b7e58..e42dd096799 100644
    // Care is taken to do this top-level in lk_main() and after
    // PostHandoffBootstrap(). This needs to be top-level as the updating of the
    // stack guard needs to happen in a function that does not return (e.g.,
+@@ -222,6 +293,10 @@ static int bootstrap2(void*) {
+ 
+   timeline_threading.Set(current_mono_ticks());
+ 
++#if defined(__aarch64__)
++  LagosBand(1, 0xFF00FF00);  // [fuchsia-lagos] band 1 GREEN: threads + scheduler run
++#endif
++
+   dprintf(SPEW, "top of bootstrap2()\n");
+ 
+   // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
+@@ -240,6 +315,15 @@ static int bootstrap2(void*) {
+   platform_init();
+   DriverHandoffLate(*gPhysHandoff);
+   lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM, LK_INIT_LEVEL_ARCH_LATE - 1);
++#if defined(__aarch64__)
++  LagosBand(2, 0xFF0000FF);  // [fuchsia-lagos] band 2 BLUE: arch + platform init done
++  {
++    // Start the heartbeat now: timers/interrupts should be live after platform init.
++    Thread* hb = Thread::Create("lagos-heartbeat", &LagosHeartbeat, nullptr, DEFAULT_PRIORITY);
++    hb->Detach();
++    hb->Resume();
++  }
++#endif
+ 
+   // At this point, other cores in the system have been started (though may
+   // not yet be online).  Signal that the boot CPU is ready.
+@@ -257,9 +341,17 @@ static int bootstrap2(void*) {
+   // Give the kernel shell an opportunity to run. If it exits this function, continue booting.
+   kernel_shell_init();
+ 
++#if defined(__aarch64__)
++  LagosBand(3, 0xFFFFFF00);  // [fuchsia-lagos] band 3 YELLOW: all CPUs/late init, starting userboot
++#endif
++
+   dprintf(SPEW, "starting user space\n");
+   userboot_init(ktl::move(handoff_end));
+ 
++#if defined(__aarch64__)
++  LagosBand(4, 0xFFFF00FF);  // [fuchsia-lagos] band 4 MAGENTA: userboot launched (userspace)
++#endif
++
+   dprintf(SPEW, "moving to last init level\n");
+   lk_primary_cpu_init_level(LK_INIT_LEVEL_USER, LK_INIT_LEVEL_LAST);
+ 
 diff --git a/zircon/system/ulib/uart/include/lib/uart/dw8250.h b/zircon/system/ulib/uart/include/lib/uart/dw8250.h
 index 6287b65f2cf..b2bcb6a42a2 100644
 --- a/zircon/system/ulib/uart/include/lib/uart/dw8250.h
