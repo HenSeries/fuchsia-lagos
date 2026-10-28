@@ -20,16 +20,33 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		/* cluster 0: Cortex-A55 */
-		cpu@0   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x000>; enable-method="psci"; };
-		cpu@1   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x001>; enable-method="psci"; };
-		cpu@2   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x002>; enable-method="psci"; };
-		cpu@3   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x003>; enable-method="psci"; };
-		cpu@100 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x100>; enable-method="psci"; };
-		cpu@101 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x101>; enable-method="psci"; };
-		/* cluster 1: Cortex-A75 (big) */
-		cpu@102 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x102>; enable-method="psci"; };
-		cpu@103 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x103>; enable-method="psci"; };
+		/* Attempt 17: MT6768 is DynamIQ -- MPIDR Aff1 = core index, Aff0 = 0.
+		 * Stock DTB: reg = 0x000,0x100,...,0x700. (Attempts <=16 wrongly used
+		 * 0x000-0x003,0x100-0x103, so PSCI CPU_ON targeted cores that don't exist.)
+		 * cluster0 = 6x Cortex-A55 (cpu0-5), cluster1 = 2x Cortex-A75 (cpu6-7). */
+		cpu0: cpu@0   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x000>; enable-method="psci"; };
+		cpu1: cpu@100 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x100>; enable-method="psci"; };
+		cpu2: cpu@200 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x200>; enable-method="psci"; };
+		cpu3: cpu@300 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x300>; enable-method="psci"; };
+		cpu4: cpu@400 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x400>; enable-method="psci"; };
+		cpu5: cpu@500 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x500>; enable-method="psci"; };
+		cpu6: cpu@600 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x600>; enable-method="psci"; };
+		cpu7: cpu@700 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x700>; enable-method="psci"; };
+
+		cpu-map {
+			cluster0 {
+				core0 { cpu = <&cpu0>; };
+				core1 { cpu = <&cpu1>; };
+				core2 { cpu = <&cpu2>; };
+				core3 { cpu = <&cpu3>; };
+				core4 { cpu = <&cpu4>; };
+				core5 { cpu = <&cpu5>; };
+			};
+			cluster1 {
+				core0 { cpu = <&cpu6>; };
+				core1 { cpu = <&cpu7>; };
+			};
+		};
 	};
 
 	psci {

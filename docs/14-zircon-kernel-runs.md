@@ -153,3 +153,53 @@ longer references `0x1050000`. The step legend is unchanged from attempt 15:
 | 5–10 | `DriverHandoffEarly`: 5 → UART handoff, 6 → GIC, 7–8 → timer, 9 → PSCI |
 | 11–21 | rest of `lk_main` (VM, heap, topology, `kernel_init`) |
 | 22+ | `bootstrap2` running; 23 + **blinking bottom strip** = timers + interrupts work; 25 = userspace |
+
+## Attempt 16 RESULT (verified flash): **22 bands** 🎉
+
+![attempt 16: 22 progress bands on the Moto G06](img/attempt16-22-bands.jpg)
+
+(Phone photographed sideways: the top of the screen is on the left.) Reading the bands:
+green, blue, yellow, red, cyan, magenta, white, orange, twice over, then green, blue,
+yellow, red, cyan, magenta. That is steps 1 to 22, then the gray background.
+
+So the PMM fix was right, and in one flash the kernel got through **all of `lk_main`**:
+PMM, `DriverHandoffEarly` (GIC, timer, PSCI), the pre-VM hooks, VM, heap,
+`DriverHandoffPostVm`, lockup detector, topology, `kernel_init`. It created `bootstrap2`, and
+the **scheduler switched to it** (step 22). It stops before step 23 (the old "after
+`platform_init`"). No blinking strip, because the heartbeat starts after that point.
+
+### Suspect: wrong CPU IDs in our minimal device tree
+
+`bootstrap2` runs `arch_init` and `platform_init`, and the latter starts the secondary CPUs
+(`topology_cpu_init` → PSCI `CPU_ON`). Our `lagos-min.dts` gave the 8 cores
+`reg = 0x000-0x003, 0x100-0x103`. Motorola's DTB says MT6768 is **DynamIQ**: MPIDR Aff1 is
+the core index and Aff0 is 0, so the IDs are `0x000, 0x100, … 0x700`, in two clusters
+(6× Cortex-A55, 2× Cortex-A75). PSCI `CPU_ON` for "0x001" targets a core that does not
+exist.
+
+## Attempt 17: real MPIDRs + cpu-map, and finer `bootstrap2` steps
+
+- `lagos-min.dts`: `reg = <0x000> … <0x700>`, plus a `cpu-map` with cluster0 (cpu0–5) and
+  cluster1 (cpu6–7), copied from the stock DTB.
+- `bootstrap2` gets steps 23–27; old 23–25 become 28–30. Bands are now 44 rows on a 48-row
+  stride, so 30 fit above the heartbeat strip.
+
+| step | after… |
+|---|---|
+| 22 | top of `bootstrap2` |
+| 23 | THREADING → ARCH-1 init hooks |
+| 24 | `arch_init` |
+| 25 | ARCH → PLATFORM-1 init hooks |
+| 26 | `platform_init` (secondary CPUs started here) |
+| 27 | `DriverHandoffLate` |
+| 28 | PLATFORM → ARCH_LATE-1 hooks; **heartbeat strip starts blinking** |
+| 29 | late per-CPU init done, starting userboot |
+| 30 | `userboot_init` returned: **userspace** |
+
+### Build gotcha: the compile cache ignores `.incbin` contents
+
+The first attempt-17 build produced a shim that still carried the *old* 1886-byte DTB,
+although the object file's timestamp changed. The compile cache keys on the preprocessed
+source, and the bytes `.incbin` reads aren't part of it. Fix: give each DTB revision a new
+file name (`lagos-min-v3.dtb`) so the source text changes. Always verify the embedded FDT
+(`totalsize`, a node name such as `cpu@700`) in the built shim before flashing.
