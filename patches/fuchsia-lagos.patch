@@ -25,7 +25,7 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..9860f9acce3 100644
+index 0f622fa45ca..a46eb658ae5 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -93,7 +93,7 @@ index 0f622fa45ca..9860f9acce3 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v5.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v6.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
@@ -184,7 +184,7 @@ index 0f622fa45ca..9860f9acce3 100644
    shim_helper.Boot();
  }
 diff --git a/zircon/kernel/arch/arm64/secondary.S b/zircon/kernel/arch/arm64/secondary.S
-index ec94bb54425..6e2706f2776 100644
+index ec94bb54425..1d4753e25e7 100644
 --- a/zircon/kernel/arch/arm64/secondary.S
 +++ b/zircon/kernel/arch/arm64/secondary.S
 @@ -29,6 +29,49 @@ resume_context          .req x24
@@ -291,19 +291,23 @@ index ec94bb54425..6e2706f2776 100644
  
    // Make sure no old exception handlers are installed.
    msr vbar_el1, xzr
-@@ -142,6 +225,12 @@ resume_context          .req x24
-   // not SP_EL0.
-   msr SPSel, #1
+@@ -121,6 +204,16 @@ resume_context          .req x24
+   br kernel_vaddr
  
+ .Lmmu_on_vaddr:
 +  // [fuchsia-lagos] stage 3 YELLOW: MMU on, running at the kernel vaddr.
-+  // x0 must survive: LAGOS_CPU_MARK only touches x10-x17.
++  // Painted HERE, while TCR_EL1 still enables TTBR0 walks: the marker writes
++  // the framebuffer's physical address through the identity map. Attempts 20
++  // and 21 painted after MMU_TCR_FLAGS_KERNEL below, which turns TTBR0 off, so
++  // the marker itself took a translation fault (vbar_el1 = 0) and killed every
++  // secondary right after stage 2. x0 must survive: x10-x17 only.
 +  movz w11, #0xff00
 +  movk w11, #0xffff, lsl #16
 +  LAGOS_CPU_MARK 3
 +
-   // Now that we've set up the most basic architectural state, it's time to
-   // determine if we're booting up or resuming from suspend and finish the job.
-   cbnz resume_context,.Lresume
+   // Disable trampoline page-table in ttbr0
+   movlit tmp, MMU_TCR_FLAGS_KERNEL
+   msr tcr_el1, tmp
 diff --git a/zircon/kernel/arch/arm64/secondary.cc b/zircon/kernel/arch/arm64/secondary.cc
 index 48b03eccacb..ab523e3746b 100644
 --- a/zircon/kernel/arch/arm64/secondary.cc
@@ -675,10 +679,10 @@ index 7dcc03863c6..723475edfd8 100644
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
 diff --git a/zircon/kernel/platform/debug.cc b/zircon/kernel/platform/debug.cc
-index 71704a5a22a..50859d44cb3 100644
+index 71704a5a22a..b36718a092b 100644
 --- a/zircon/kernel/platform/debug.cc
 +++ b/zircon/kernel/platform/debug.cc
-@@ -643,7 +643,134 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
+@@ -643,7 +643,216 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
    }
  }
  
@@ -702,17 +706,30 @@ index 71704a5a22a..50859d44cb3 100644
 +  uint32_t pitch;
 +};
 +constexpr LagosConFrame kLagosConFrames[] = {{0, 2944}, {0x4ac000, 2880}, {0x958000, 2944}};
-+constexpr uint32_t kLagosConTop = 496;
-+constexpr uint32_t kLagosConLines = 71;
++// Attempt 22: the top of the console region is a PINNED area. Every logical
++// line that starts with "lagos" (our own diagnostics) or looks like a panic or
++// assert is also copied there, so a later flood of userspace logs can no longer
++// wrap over it. Slot 0 is reserved for the heartbeat; the other slots rotate.
++// Each slot is 2 text rows (180 chars). The scrolling console follows below.
++constexpr uint32_t kLagosPinTop = 496;
++constexpr uint32_t kLagosPinSlots = 12;
++constexpr uint32_t kLagosPinSlotChars = 180;
++constexpr uint32_t kLagosConTop = kLagosPinTop + kLagosPinSlots * 32 + 8;
++constexpr uint32_t kLagosConLines = (1632 - kLagosConTop) / 16;
 +constexpr uint32_t kLagosConCols = 90;
 +constexpr uint32_t kLagosConFg = 0xFFE0E0E0;
++constexpr uint32_t kLagosPinFg = 0xFFFFFF00;
 +constexpr uint32_t kLagosConBg = 0xFF000000;
 +constexpr uint32_t kLagosConMark = 0xFFFF0000;
++constexpr uint32_t kLagosPinRule = 0xFF808080;
 +
 +uint32_t gLagosConLine = 0;
 +uint32_t gLagosConCol = 0;
 +bool gLagosConReady = false;
 +ktl::atomic<bool> gLagosConBusy{false};
++char gLagosLineBuf[kLagosPinSlotChars];
++uint32_t gLagosLineLen = 0;
++uint32_t gLagosPinNext = 1;
 +
 +bool LagosConUsable() { return gPhysmapSize > kLagosConFb + 0xE04000; }
 +
@@ -721,17 +738,16 @@ index 71704a5a22a..50859d44cb3 100644
 +                                              uint64_t{pixel_row} * f.pitch);
 +}
 +
-+void LagosConCleanLine(uint32_t line) {
++void LagosConCleanRows(uint32_t top, uint32_t rows) {
 +  for (const LagosConFrame& f : kLagosConFrames) {
-+    arch_clean_cache_range(reinterpret_cast<vaddr_t>(LagosConRow(f, kLagosConTop + line * 16)),
-+                           size_t{16} * f.pitch);
++    arch_clean_cache_range(reinterpret_cast<vaddr_t>(LagosConRow(f, top)), size_t{rows} * f.pitch);
 +  }
 +}
 +
-+void LagosConFillLine(uint32_t line, uint32_t rows, uint32_t bgra) {
++void LagosConFillRows(uint32_t top, uint32_t rows, uint32_t bgra) {
 +  for (const LagosConFrame& f : kLagosConFrames) {
 +    for (uint32_t r = 0; r < rows; ++r) {
-+      volatile uint32_t* row = LagosConRow(f, kLagosConTop + line * 16 + r);
++      volatile uint32_t* row = LagosConRow(f, top + r);
 +      for (uint32_t c = 0; c < 720; ++c) {
 +        row[c] = bgra;
 +      }
@@ -739,16 +755,73 @@ index 71704a5a22a..50859d44cb3 100644
 +  }
 +}
 +
-+void LagosConGlyph(uint32_t line, uint32_t col, char ch) {
++void LagosConGlyphAt(uint32_t top, uint32_t col, char ch, uint32_t fg) {
 +  const uint8_t* glyph = kLagosFont8x16[(ch >= 0x20 && ch < 0x7f) ? ch - 0x20 : '?' - 0x20];
 +  for (const LagosConFrame& f : kLagosConFrames) {
 +    for (uint32_t r = 0; r < 16; ++r) {
-+      volatile uint32_t* row = LagosConRow(f, kLagosConTop + line * 16 + r) + col * 8;
++      volatile uint32_t* row = LagosConRow(f, top + r) + col * 8;
 +      for (uint32_t b = 0; b < 8; ++b) {
-+        row[b] = (glyph[r] & (0x80u >> b)) ? kLagosConFg : kLagosConBg;
++        row[b] = (glyph[r] & (0x80u >> b)) ? fg : kLagosConBg;
 +      }
 +    }
 +  }
++}
++
++uint32_t LagosConLineTop(uint32_t line) { return kLagosConTop + line * 16; }
++
++void LagosConCleanLine(uint32_t line) { LagosConCleanRows(LagosConLineTop(line), 16); }
++
++void LagosConFillLine(uint32_t line, uint32_t rows, uint32_t bgra) {
++  LagosConFillRows(LagosConLineTop(line), rows, bgra);
++}
++
++void LagosConGlyph(uint32_t line, uint32_t col, char ch) {
++  LagosConGlyphAt(LagosConLineTop(line), col, ch, kLagosConFg);
++}
++
++bool LagosLineHas(const char* needle) {
++  for (uint32_t i = 0; i < gLagosLineLen; ++i) {
++    uint32_t j = 0;
++    while (needle[j] != '\0' && i + j < gLagosLineLen && gLagosLineBuf[i + j] == needle[j]) {
++      ++j;
++    }
++    if (needle[j] == '\0') {
++      return true;
++    }
++  }
++  return false;
++}
++
++bool LagosLineStarts(const char* prefix) {
++  uint32_t j = 0;
++  while (prefix[j] != '\0') {
++    if (j >= gLagosLineLen || gLagosLineBuf[j] != prefix[j]) {
++      return false;
++    }
++    ++j;
++  }
++  return true;
++}
++
++// Copy the logical line just finished into the pinned area if it matters.
++void LagosPinLine() {
++  uint32_t slot;
++  if (LagosLineStarts("lagos: heartbeat")) {
++    slot = 0;
++  } else if (LagosLineStarts("lagos") || LagosLineHas("PANIC") || LagosLineHas("ASSERT") ||
++             LagosLineHas("panic")) {
++    slot = gLagosPinNext;
++    gLagosPinNext = gLagosPinNext + 1 < kLagosPinSlots ? gLagosPinNext + 1 : 1;
++  } else {
++    return;
++  }
++  const uint32_t top = kLagosPinTop + slot * 32;
++  LagosConFillRows(top, 32, kLagosConBg);
++  for (uint32_t i = 0; i < gLagosLineLen; ++i) {
++    LagosConGlyphAt(top + (i / kLagosConCols) * 16, i % kLagosConCols, gLagosLineBuf[i],
++                    kLagosPinFg);
++  }
++  LagosConCleanRows(top, 32);
 +}
 +
 +void LagosConNewline() {
@@ -763,6 +836,12 @@ index 71704a5a22a..50859d44cb3 100644
 +  LagosConCleanLine(next);
 +}
 +
++void LagosLineAppend(char ch) {
++  if (gLagosLineLen < kLagosPinSlotChars) {
++    gLagosLineBuf[gLagosLineLen++] = ch;
++  }
++}
++
 +void LagosConsoleWrite(const char* str, size_t len) {
 +  if (!LagosConUsable()) {
 +    return;
@@ -774,6 +853,9 @@ index 71704a5a22a..50859d44cb3 100644
 +    expected = false;
 +  }
 +  if (!gLagosConReady) {
++    LagosConFillRows(kLagosPinTop, kLagosConTop - kLagosPinTop, kLagosConBg);
++    LagosConFillRows(kLagosConTop - 5, 2, kLagosPinRule);
++    LagosConCleanRows(kLagosPinTop, kLagosConTop - kLagosPinTop);
 +    for (uint32_t l = 0; l < kLagosConLines; ++l) {
 +      LagosConFillLine(l, 16, kLagosConBg);
 +      LagosConCleanLine(l);
@@ -783,14 +865,18 @@ index 71704a5a22a..50859d44cb3 100644
 +  for (size_t i = 0; i < len; ++i) {
 +    const char ch = str[i];
 +    if (ch == '\n') {
++      LagosPinLine();
++      gLagosLineLen = 0;
 +      LagosConNewline();
 +    } else if (ch == '\r') {
 +      // ignore
 +    } else if (ch == '\t') {
 +      do {
++        LagosLineAppend(' ');
 +        LagosConGlyph(gLagosConLine, gLagosConCol++, ' ');
 +      } while (gLagosConCol % 8 != 0 && gLagosConCol < kLagosConCols);
 +    } else {
++      LagosLineAppend(ch);
 +      LagosConGlyph(gLagosConLine, gLagosConCol++, ch);
 +    }
 +    if (gLagosConCol >= kLagosConCols) {
@@ -813,7 +899,7 @@ index 71704a5a22a..50859d44cb3 100644
    if (!platform_serial_enabled()) {
      return ZX_OK;
    }
-@@ -663,6 +790,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
+@@ -663,6 +872,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
  }
  
  void platform_dputs_irq(const char* str, size_t len) {
@@ -821,7 +907,7 @@ index 71704a5a22a..50859d44cb3 100644
    if (!platform_serial_enabled()) {
      return;
    }
-@@ -749,6 +877,7 @@ int platform_pgetc(char* c) {
+@@ -749,6 +959,7 @@ int platform_pgetc(char* c) {
  }
  
  void platform_pputc(char c) {

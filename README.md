@@ -17,11 +17,11 @@ community/history of the Fuchsia tree.
 
 | | |
 |---|---|
-| **Phase** | Hito 0 bring-up — **the Zircon kernel runs on the device** ✅ (attempt 12, GRAY) |
+| **Phase** | Hito 0 bring-up — **Fuchsia userspace runs on the device** ✅ (attempt 21: component_manager, driver_manager, fshost, `/boot/bin/sh` launched; [docs/16](docs/16-userspace-reached.md)) |
 | **Target SoC** | MediaTek **MT6768** (basis of "Helio G81") |
 | **Device** | Motorola Moto G06 `lagos` (XT2535-1), bootloader unlocked, A/B slots |
-| **Next milestone** | kernel init → userspace (attempt 13: progress bands + timer heartbeat, [docs/14](docs/14-zircon-kernel-runs.md)) |
-| **Output channel** | No UART tap yet; progress is read as solid colours painted into LK's framebuffer ([docs/12](docs/12-attempt7-framebuffer-printf.md), [docs/13](docs/13-attempt10-blue-shim-works.md)) |
+| **Next milestone** | all 8 CPUs online, CPU0 timer interrupt, full 4 GiB RAM (attempt 22), then a usable shell ([docs/16](docs/16-userspace-reached.md)) |
+| **Output channel** | No UART tap yet; kernel + userspace logs are drawn by a framebuffer text console into LK's framebuffer ([docs/15](docs/15-framebuffer-console.md)); earlier stages used solid colours ([docs/12](docs/12-attempt7-framebuffer-printf.md)) |
 
 ## The milestone ladder
 
