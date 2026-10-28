@@ -347,7 +347,7 @@ index 5807894b5a0..57d5279b56e 100644
  }  // namespace boot_shim
  
 diff --git a/zircon/kernel/phys/physboot.cc b/zircon/kernel/phys/physboot.cc
-index 7dcc03863c6..2089389aa70 100644
+index 7dcc03863c6..723475edfd8 100644
 --- a/zircon/kernel/phys/physboot.cc
 +++ b/zircon/kernel/phys/physboot.cc
 @@ -54,6 +54,29 @@ enum ModuleId : unsigned int {
@@ -396,7 +396,7 @@ index 7dcc03863c6..2089389aa70 100644
  
    // Symbolize uses its output for the panic path.  So that should not be
    // redirected to the log code path.  Instead keep it pointed at a copy of the
-@@ -161,6 +186,16 @@ void RelocateElfKernel(ElfImage& kernel) {
+@@ -161,6 +186,24 @@ void RelocateElfKernel(ElfImage& kernel) {
  
    AddressSpace aspace;
    InitMemory(zbi_ptr, ktl::move(zbi), &aspace);
@@ -407,8 +407,16 @@ index 7dcc03863c6..2089389aa70 100644
 +  // through the handoff and lands on the PMM's permanently-reserved list, but
 +  // it is still a RAM type, so the kernel physmap keeps covering it and the
 +  // kernel can paint progress bands late in boot. See fuchsia-lagos/docs/14.
++  //
++  // Attempt 16: reserve ONLY the painted frames [0x781b0000, +0xE04000), not the
++  // whole 0x1050000 bank. The bank is its own PMM arena (the hole below it is far
++  // too big to bridge), and an arena needs free RAM inside it for its page
++  // bookkeeping (~200 KiB here). Reserving the whole bank left none, so
++  // SelectPmmArenas() dropped an allocated range and pmm_init hit
++  // ZX_ASSERT(!allocation_excluded): the attempt-13..15 hang in
++  // platform_early_init. The free 0x24C000 tail now hosts the bookkeeping.
 +  (void)Allocation::GetPool().UpdateRamSubranges(memalloc::Type::kTestRamReserve,
-+                                                 uint64_t{0x781b0000}, uint64_t{0x1050000});
++                                                 uint64_t{0x781b0000}, uint64_t{0xE04000});
 +#endif
  
    // This marks the interval between handoff from the boot loader (kZbiEntry)
