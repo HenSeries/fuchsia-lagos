@@ -134,3 +134,30 @@ first real thing in `PhysMain` (marked *REVERT AFTER* in `linux-arm64-boot-shim.
 |---|---|
 | black and **never reboots** | our code runs **and** the TOPRGU disable works → the bug is later in the shim (DTB parse / `InitMemory` / `Boot`). Big step: we have a foothold to bisect |
 | still reboots every ~20 s | we never execute, **or** a non-TOPRGU reset source (SSPM / preloader-level) fires → next look at the LK handoff (load address / `text_offset` vs LK's `0x40080000`) and the SSPM |
+
+### The diagnostic binary, verified
+
+Dead-code elimination collapsed the shim to **696 bytes** (everything after the infinite
+loop is unreachable) — expected and harmless. `linuxboot-embed` still appends the ZBI
+(packed image 29 047 352 bytes, header `image_size` patched to cover it), the Linux arm64
+header is intact (`ARM\x64` @56, `text_offset=0`, flags `0x4`), and `llvm-objdump -d` of
+the ELF shows `PhysMain` is exactly the six instructions we want, with the volatile store
+**before** the hang:
+
+```
+000000000000014c <PhysMain>:
+     14c: mov  w8, #0x7000
+     150: mov  w9, #0x22000000
+     154: movk w8, #0x1000, lsl #16     ; x8 = 0x10007000  (TOPRGU WDT_MODE)
+     158: str  w9, [x8]                 ; WDT_MODE = key | EN=0  -> watchdog off
+     15c: wfi
+     160: b    0x15c                    ; hang forever
+```
+
+`_start` is the normal phys entry (saves the DTB `x0→x9`, picks `VBAR_ELx` by `CurrentEL`
+so no illegal `msr`, cache-maintains `[__data_start,_end)`, then calls `PhysMain`). So if
+this image executes at all, the device sits black and never reboots.
+
+> Gotcha for anyone re-checking the header: the magic reads back as the bytes `ARMd`
+> because `0x64` **is** `'d'` — that's the correct `ARM\x64`. A first validation script
+> here flagged it "BAD" only because of a mis-escaped literal.
