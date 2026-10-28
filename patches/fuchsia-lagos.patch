@@ -25,7 +25,7 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..9552dde055e 100644
+index 0f622fa45ca..7b707d0cb04 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -93,7 +93,7 @@ index 0f622fa45ca..9552dde055e 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v3.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
@@ -457,7 +457,7 @@ index 25c6e727f56..01038c71db5 100644
    if (arch_handoff.motmot_power_driver) {
      motmot_power_init_early();
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..de2b8476151 100644
+index fdd8b1b7e58..1147e997fc2 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
 @@ -30,6 +30,7 @@
@@ -507,9 +507,9 @@ index fdd8b1b7e58..de2b8476151 100644
 +  }
 +}
 +
-+// Step k (1-based) paints a 52-row band at rows [(k-1)*56, (k-1)*56+52), with a
++// Step k (1-based) paints a 44-row band at rows [(k-1)*48, (k-1)*48+44), with a
 +// 4-row gap so bands can be counted. Colours cycle through 8 so that "N bands,
-+// last one colour X" is unambiguous. Steps 1-21 bisect lk_main (6-10 inside DriverHandoffEarly), 22-25 bootstrap2.
++// last one colour X" is unambiguous. Steps 1-21 bisect lk_main (6-10 inside DriverHandoffEarly), 22-30 bootstrap2.
 +// Attempt 13 never painted bootstrap2's first band, so the hang is in lk_main.
 +constexpr uint32_t kLagosStepColours[] = {
 +    0xFF00FF00,  // 1 green
@@ -522,8 +522,8 @@ index fdd8b1b7e58..de2b8476151 100644
 +    0xFFFF8000,  // 8 orange
 +};
 +void LagosStep(int k) {
-+  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 56;
-+  LagosFillRows(row0, row0 + 52, kLagosStepColours[(k - 1) % 8]);
++  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 48;
++  LagosFillRows(row0, row0 + 44, kLagosStepColours[(k - 1) % 8]);
 +}
 +
 +// Heartbeat: the bottom strip alternates white/black every 500 ms. It only
@@ -699,12 +699,37 @@ index fdd8b1b7e58..de2b8476151 100644
    dprintf(SPEW, "top of bootstrap2()\n");
  
    // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
-@@ -240,6 +379,15 @@ static int bootstrap2(void*) {
-   platform_init();
+@@ -231,15 +370,39 @@ static int bootstrap2(void*) {
+ 
+   // Initialize the rest of the architecture and platform.
+   lk_primary_cpu_init_level(LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_ARCH - 1);
++#if defined(__aarch64__)
++  LagosStep(23);  // [fuchsia-lagos] THREADING..ARCH-1 init hooks done
++#endif
+ 
+   dprintf(SPEW, "initializing arch\n");
+   arch_init();
++#if defined(__aarch64__)
++  LagosStep(24);  // [fuchsia-lagos] arch_init done
++#endif
+   lk_primary_cpu_init_level(LK_INIT_LEVEL_ARCH, LK_INIT_LEVEL_PLATFORM - 1);
++#if defined(__aarch64__)
++  LagosStep(25);  // [fuchsia-lagos] ARCH..PLATFORM-1 init hooks done
++#endif
+ 
+   dprintf(SPEW, "initializing platform\n");
+-  platform_init();
++  platform_init();  // secondary CPUs are started from here (topology_cpu_init)
++#if defined(__aarch64__)
++  LagosStep(26);  // [fuchsia-lagos] platform_init done
++#endif
    DriverHandoffLate(*gPhysHandoff);
++#if defined(__aarch64__)
++  LagosStep(27);  // [fuchsia-lagos] DriverHandoffLate done
++#endif
    lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM, LK_INIT_LEVEL_ARCH_LATE - 1);
 +#if defined(__aarch64__)
-+  LagosStep(23);  // [fuchsia-lagos] arch + platform init done
++  LagosStep(28);  // [fuchsia-lagos] arch + platform init done; heartbeat starts
 +  {
 +    // Start the heartbeat now: timers/interrupts should be live after platform init.
 +    Thread* hb = Thread::Create("lagos-heartbeat", &LagosHeartbeat, nullptr, DEFAULT_PRIORITY);
@@ -715,19 +740,19 @@ index fdd8b1b7e58..de2b8476151 100644
  
    // At this point, other cores in the system have been started (though may
    // not yet be online).  Signal that the boot CPU is ready.
-@@ -257,9 +405,17 @@ static int bootstrap2(void*) {
+@@ -257,9 +420,17 @@ static int bootstrap2(void*) {
    // Give the kernel shell an opportunity to run. If it exits this function, continue booting.
    kernel_shell_init();
  
 +#if defined(__aarch64__)
-+  LagosStep(24);  // [fuchsia-lagos] late init done, starting userboot
++  LagosStep(29);  // [fuchsia-lagos] late init done, starting userboot
 +#endif
 +
    dprintf(SPEW, "starting user space\n");
    userboot_init(ktl::move(handoff_end));
  
 +#if defined(__aarch64__)
-+  LagosStep(25);  // [fuchsia-lagos] userboot launched (userspace)
++  LagosStep(30);  // [fuchsia-lagos] userboot launched (userspace)
 +#endif
 +
    dprintf(SPEW, "moving to last init level\n");
