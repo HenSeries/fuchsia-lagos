@@ -105,3 +105,32 @@ Outcomes this discriminates:
 | loop **stops**, device stays quiet (black) | the TOPRGU WDT was the reset source and the kernel just never reached the pet; the shim is at least running. Quiet = Fuchsia running **or** shim hung — UART tells which |
 | still loops at ~20 s | the reset is **not** the TOPRGU (preloader timeout / other reset source) **or** the shim faults instantly before this write even matters → points at DTB parse / LK handoff |
 | loop period **changes** | a different reset path took over — also informative |
+
+## Attempt 4 RESULT (2026-10-28): still loops, black → reboot
+
+Identical to attempts 2 and 3. **This is the most important data point so far:** three
+radically different images (embedded ZBI; + watchdog ZBI item; + unconditional
+first-instruction WDT disable) produced **exactly the same** ~20 s black→reboot. If our
+code ran, attempt 4 alone should have changed *something*. So either **our code never
+executes** (LK jumps — the logo goes black — but something fails before `PhysMain`), or
+it runs, dies almost immediately, and a reset source **other than the TOPRGU** fires at
+~20 s.
+
+### Ruled out this round
+
+| hypothesis | check | result |
+|---|---|---|
+| LK doesn't recognize the image as a kernel | Linux arm64 `Image` header of the packed shim | **valid**: magic `ARM\x64` @56, `text_offset=0`, `image_size=0x1c03e48`, MZ `code0` → LK accepts it |
+| AVB rejects the unsigned boot.img | flags of every vbmeta we flash (`images/vbmeta*-noverity.img`, header offset 120) | **flags = 0x3** = `HASHTREE_DISABLED \| VERIFICATION_DISABLED` → boot is **not** verified; AVB is not the blocker |
+| another AP watchdog besides TOPRGU | stock DTB scan | **none** — only `mediatek,sspm` @0x10400000 (coprocessor; can reset the AP but isn't a standard WDT) and PMIC `mt6358` (no system-WDT subnode) |
+
+## Attempt 5: a diagnostic that needs no UART
+
+To separate "our code never runs" from "it runs and something else resets", the shim now
+**deliberately hangs forever** right after the TOPRGU disable — `for (;;) wfi;` as the
+first real thing in `PhysMain` (marked *REVERT AFTER* in `linux-arm64-boot-shim.cc`).
+
+| observed | meaning |
+|---|---|
+| black and **never reboots** | our code runs **and** the TOPRGU disable works → the bug is later in the shim (DTB parse / `InitMemory` / `Boot`). Big step: we have a foothold to bisect |
+| still reboots every ~20 s | we never execute, **or** a non-TOPRGU reset source (SSPM / preloader-level) fires → next look at the LK handoff (load address / `text_offset` vs LK's `0x40080000`) and the SSPM |
