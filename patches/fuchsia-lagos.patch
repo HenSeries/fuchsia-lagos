@@ -25,7 +25,7 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..7b707d0cb04 100644
+index 0f622fa45ca..63c8c47bf59 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -93,7 +93,7 @@ index 0f622fa45ca..7b707d0cb04 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v3.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v4.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
@@ -421,6 +421,161 @@ index 7dcc03863c6..723475edfd8 100644
  
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
+diff --git a/zircon/kernel/platform/debug.cc b/zircon/kernel/platform/debug.cc
+index 71704a5a22a..50859d44cb3 100644
+--- a/zircon/kernel/platform/debug.cc
++++ b/zircon/kernel/platform/debug.cc
+@@ -643,7 +643,134 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
+   }
+ }
+ 
++#if defined(__aarch64__)
++// [fuchsia-lagos] Framebuffer text console for the Moto G06 (MT6768), which has
++// no UART tap. Every byte the kernel sends to the serial console is also drawn
++// into LK's framebuffer (0x781b0000, BGRA8888, 720x1640, three frame slots;
++// physboot reserves them, the physmap covers them). Region: rows [496, 1632),
++// 71 lines x 90 columns of an 8x16 Terminus font. It WRAPS instead of
++// scrolling (cheap and safe in panic context); a red bar marks the line after
++// the newest one. See fuchsia-lagos/docs/15.
++#include <arch/ops.h>
++#include <vm/physmap.h>
++
++#include "lagos_font8x16.h"
++
++namespace {
++constexpr uint64_t kLagosConFb = 0x781b0000;
++struct LagosConFrame {
++  uint64_t offset;
++  uint32_t pitch;
++};
++constexpr LagosConFrame kLagosConFrames[] = {{0, 2944}, {0x4ac000, 2880}, {0x958000, 2944}};
++constexpr uint32_t kLagosConTop = 496;
++constexpr uint32_t kLagosConLines = 71;
++constexpr uint32_t kLagosConCols = 90;
++constexpr uint32_t kLagosConFg = 0xFFE0E0E0;
++constexpr uint32_t kLagosConBg = 0xFF000000;
++constexpr uint32_t kLagosConMark = 0xFFFF0000;
++
++uint32_t gLagosConLine = 0;
++uint32_t gLagosConCol = 0;
++bool gLagosConReady = false;
++ktl::atomic<bool> gLagosConBusy{false};
++
++bool LagosConUsable() { return gPhysmapSize > kLagosConFb + 0xE04000; }
++
++volatile uint32_t* LagosConRow(const LagosConFrame& f, uint32_t pixel_row) {
++  return reinterpret_cast<volatile uint32_t*>(gPhysmapBase + kLagosConFb + f.offset +
++                                              uint64_t{pixel_row} * f.pitch);
++}
++
++void LagosConCleanLine(uint32_t line) {
++  for (const LagosConFrame& f : kLagosConFrames) {
++    arch_clean_cache_range(reinterpret_cast<vaddr_t>(LagosConRow(f, kLagosConTop + line * 16)),
++                           size_t{16} * f.pitch);
++  }
++}
++
++void LagosConFillLine(uint32_t line, uint32_t rows, uint32_t bgra) {
++  for (const LagosConFrame& f : kLagosConFrames) {
++    for (uint32_t r = 0; r < rows; ++r) {
++      volatile uint32_t* row = LagosConRow(f, kLagosConTop + line * 16 + r);
++      for (uint32_t c = 0; c < 720; ++c) {
++        row[c] = bgra;
++      }
++    }
++  }
++}
++
++void LagosConGlyph(uint32_t line, uint32_t col, char ch) {
++  const uint8_t* glyph = kLagosFont8x16[(ch >= 0x20 && ch < 0x7f) ? ch - 0x20 : '?' - 0x20];
++  for (const LagosConFrame& f : kLagosConFrames) {
++    for (uint32_t r = 0; r < 16; ++r) {
++      volatile uint32_t* row = LagosConRow(f, kLagosConTop + line * 16 + r) + col * 8;
++      for (uint32_t b = 0; b < 8; ++b) {
++        row[b] = (glyph[r] & (0x80u >> b)) ? kLagosConFg : kLagosConBg;
++      }
++    }
++  }
++}
++
++void LagosConNewline() {
++  LagosConCleanLine(gLagosConLine);
++  gLagosConLine = (gLagosConLine + 1) % kLagosConLines;
++  gLagosConCol = 0;
++  LagosConFillLine(gLagosConLine, 16, kLagosConBg);
++  // Red wrap marker on the line after the current one.
++  const uint32_t next = (gLagosConLine + 1) % kLagosConLines;
++  LagosConFillLine(next, 16, kLagosConBg);
++  LagosConFillLine(next, 3, kLagosConMark);
++  LagosConCleanLine(next);
++}
++
++void LagosConsoleWrite(const char* str, size_t len) {
++  if (!LagosConUsable()) {
++    return;
++  }
++  // Best-effort exclusion between CPUs; never block forever (panic paths).
++  bool expected = false;
++  for (int spins = 0; !gLagosConBusy.compare_exchange_weak(expected, true) && spins < 1'000'000;
++       ++spins) {
++    expected = false;
++  }
++  if (!gLagosConReady) {
++    for (uint32_t l = 0; l < kLagosConLines; ++l) {
++      LagosConFillLine(l, 16, kLagosConBg);
++      LagosConCleanLine(l);
++    }
++    gLagosConReady = true;
++  }
++  for (size_t i = 0; i < len; ++i) {
++    const char ch = str[i];
++    if (ch == '\n') {
++      LagosConNewline();
++    } else if (ch == '\r') {
++      // ignore
++    } else if (ch == '\t') {
++      do {
++        LagosConGlyph(gLagosConLine, gLagosConCol++, ' ');
++      } while (gLagosConCol % 8 != 0 && gLagosConCol < kLagosConCols);
++    } else {
++      LagosConGlyph(gLagosConLine, gLagosConCol++, ch);
++    }
++    if (gLagosConCol >= kLagosConCols) {
++      LagosConNewline();
++    }
++  }
++  LagosConCleanLine(gLagosConLine);
++  gLagosConBusy.store(false);
++}
++}  // namespace
++#define LAGOS_CONSOLE_WRITE(str, len) LagosConsoleWrite(str, len)
++#else
++#define LAGOS_CONSOLE_WRITE(str, len) \
++  do {                                \
++  } while (0)
++#endif
++
+ zx_status_t platform_dputs_thread(const char* str, size_t len) {
++  LAGOS_CONSOLE_WRITE(str, len);  // [fuchsia-lagos]
+   if (!platform_serial_enabled()) {
+     return ZX_OK;
+   }
+@@ -663,6 +790,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
+ }
+ 
+ void platform_dputs_irq(const char* str, size_t len) {
++  LAGOS_CONSOLE_WRITE(str, len);  // [fuchsia-lagos]
+   if (!platform_serial_enabled()) {
+     return;
+   }
+@@ -749,6 +877,7 @@ int platform_pgetc(char* c) {
+ }
+ 
+ void platform_pputc(char c) {
++  LAGOS_CONSOLE_WRITE(&c, 1);  // [fuchsia-lagos]
+   if (!platform_serial_enabled()) {
+     return;
+   }
 diff --git a/zircon/kernel/platform/generic-arm/dev-init.cc b/zircon/kernel/platform/generic-arm/dev-init.cc
 index 25c6e727f56..01038c71db5 100644
 --- a/zircon/kernel/platform/generic-arm/dev-init.cc
@@ -457,7 +612,7 @@ index 25c6e727f56..01038c71db5 100644
    if (arch_handoff.motmot_power_driver) {
      motmot_power_init_early();
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..1147e997fc2 100644
+index fdd8b1b7e58..5442a1e27f7 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
 @@ -30,6 +30,7 @@
@@ -468,7 +623,15 @@ index fdd8b1b7e58..1147e997fc2 100644
  #include <dev/init.h>
  #include <kernel/cpu.h>
  #include <kernel/init.h>
-@@ -59,6 +60,75 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
+@@ -41,6 +42,7 @@
+ #include <phys/handoff/handoff.h>
+ #include <phys/handoff/zircon-abi-spec.h>
+ #include <vm/init.h>
++#include <vm/physmap.h>
+ #include <vm/vm.h>
+ 
+ namespace {
+@@ -59,6 +61,76 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
  
  static uint secondary_idle_thread_count;
  
@@ -476,8 +639,12 @@ index fdd8b1b7e58..1147e997fc2 100644
 +// [fuchsia-lagos] Framebuffer progress bar for the Moto G06 (no UART tap).
 +// LK's framebuffer: 0x781b0000, BGRA8888, 720x1640, three frame slots with
 +// different pitches (the visible overlay layer is unknown, so paint all three).
-+// Physboot reserves this bank (kTestRamReserve), so the PMM never allocates
-+// it and the physmap still covers it. See fuchsia-lagos/docs/14.
++// Physboot reserves the painted frames (kTestRamReserve), so the PMM never
++// allocates them and the physmap still covers them. Uses gPhysmapBase, which
++// (unlike gPhysHandoff) survives EndHandoff(). See fuchsia-lagos/docs/15.
++//
++// Layout (attempt 18): bands in rows [0, 480) x cols [0, 680); heartbeat strip
++// in rows [0, 480) x cols [688, 720); text console (platform/debug.cc) below.
 +namespace {
 +constexpr uint64_t kLagosFb = 0x781b0000;
 +struct LagosFrame {
@@ -485,18 +652,16 @@ index fdd8b1b7e58..1147e997fc2 100644
 +  uint32_t pitch;
 +};
 +constexpr LagosFrame kLagosFrames[] = {{0, 2944}, {0x4ac000, 2880}, {0x958000, 2944}};
-+constexpr uint32_t kLagosRows = 1640;
-+constexpr uint32_t kLagosCols = 720;
 +
-+void LagosFillRows(uint32_t row0, uint32_t row1, uint32_t bgra) {
-+  if (gPhysHandoff == nullptr) {
-+    return;
++void LagosFillRect(uint32_t row0, uint32_t row1, uint32_t col0, uint32_t col1, uint32_t bgra) {
++  if (gPhysmapSize <= kLagosFb + 0xE04000) {
++    return;  // physmap not set up yet
 +  }
 +  for (const LagosFrame& f : kLagosFrames) {
-+    const uintptr_t base = gPhysHandoff->physmap_base + kLagosFb + f.offset;
-+    for (uint32_t r = row0; r < row1 && r < kLagosRows; ++r) {
++    const uintptr_t base = gPhysmapBase + kLagosFb + f.offset;
++    for (uint32_t r = row0; r < row1 && r < 1640; ++r) {
 +      auto* row = reinterpret_cast<volatile uint32_t*>(base + uint64_t{r} * f.pitch);
-+      for (uint32_t c = 0; c < kLagosCols; ++c) {
++      for (uint32_t c = col0; c < col1 && c < 720; ++c) {
 +        row[c] = bgra;
 +      }
 +    }
@@ -507,10 +672,9 @@ index fdd8b1b7e58..1147e997fc2 100644
 +  }
 +}
 +
-+// Step k (1-based) paints a 44-row band at rows [(k-1)*48, (k-1)*48+44), with a
-+// 4-row gap so bands can be counted. Colours cycle through 8 so that "N bands,
-+// last one colour X" is unambiguous. Steps 1-21 bisect lk_main (6-10 inside DriverHandoffEarly), 22-30 bootstrap2.
-+// Attempt 13 never painted bootstrap2's first band, so the hang is in lk_main.
++// Step k (1-based) paints a 12-row band at rows [(k-1)*16, (k-1)*16+12).
++// Colours cycle through 8 so that "N bands, last one colour X" is unambiguous.
++// Steps 1-21 bisect lk_main (6-10 inside DriverHandoffEarly), 22-30 bootstrap2.
 +constexpr uint32_t kLagosStepColours[] = {
 +    0xFF00FF00,  // 1 green
 +    0xFF0000FF,  // 2 blue
@@ -522,15 +686,15 @@ index fdd8b1b7e58..1147e997fc2 100644
 +    0xFFFF8000,  // 8 orange
 +};
 +void LagosStep(int k) {
-+  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 48;
-+  LagosFillRows(row0, row0 + 44, kLagosStepColours[(k - 1) % 8]);
++  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 16;
++  LagosFillRect(row0, row0 + 12, 0, 680, kLagosStepColours[(k - 1) % 8]);
 +}
 +
-+// Heartbeat: the bottom strip alternates white/black every 500 ms. It only
++// Heartbeat: the right-hand strip alternates white/black every 500 ms. It only
 +// blinks if the scheduler, the arch timer and GIC interrupts all work.
 +int LagosHeartbeat(void*) {
 +  for (bool on = true;; on = !on) {
-+    LagosFillRows(1440, kLagosRows, on ? 0xFFFFFFFF : 0xFF000000);
++    LagosFillRect(0, 480, 688, 720, on ? 0xFFFFFFFF : 0xFF000000);
 +    Thread::Current::SleepRelative(ZX_MSEC(500));
 +  }
 +  return 0;
@@ -544,7 +708,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  static int bootstrap2(void* arg);
  
  KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
-@@ -87,6 +157,23 @@ void lk_main(PhysHandoff* handoff) {
+@@ -87,6 +159,23 @@ void lk_main(PhysHandoff* handoff) {
    // After PostHandoffBootstrap(), gPhysHandoff should now be set.
    ZX_DEBUG_ASSERT(gPhysHandoff != nullptr);
  
@@ -568,7 +732,7 @@ index fdd8b1b7e58..1147e997fc2 100644
    // Care is taken to do this top-level in lk_main() and after
    // PostHandoffBootstrap(). This needs to be top-level as the updating of the
    // stack guard needs to happen in a function that does not return (e.g.,
-@@ -123,6 +210,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -123,6 +212,9 @@ void lk_main(PhysHandoff* handoff) {
  
    // deal with any static constructors
    CallConstructors();
@@ -578,7 +742,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // we can safely printf now since we have the debuglog, the current thread set
    // which holds (a per-line buffer), and global ctors finished (some of the
-@@ -137,15 +227,33 @@ void lk_main(PhysHandoff* handoff) {
+@@ -137,15 +229,33 @@ void lk_main(PhysHandoff* handoff) {
    // constructors (if needed) have been run.
  
    lk_primary_cpu_init_level(LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_ARCH_EARLY - 1);
@@ -612,7 +776,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // At this point, the kernel command line and serial are set up.
  
-@@ -159,29 +267,47 @@ void lk_main(PhysHandoff* handoff) {
+@@ -159,29 +269,47 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing arch pre-vm\n");
    arch_prevm_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_ARCH_PREVM, LK_INIT_LEVEL_PLATFORM_PREVM - 1);
@@ -660,7 +824,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // Initialize the lockup detector, after the platform timer has been
    // configured, but before the topology subsystem has brought up other CPUs.
-@@ -197,11 +323,17 @@ void lk_main(PhysHandoff* handoff) {
+@@ -197,11 +325,17 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing system topology\n");
    topology_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_TOPOLOGY, LK_INIT_LEVEL_KERNEL - 1);
@@ -678,7 +842,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // Mark the current CPU as being active, then create a thread to complete
    // system initialization
-@@ -212,6 +344,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -212,6 +346,9 @@ void lk_main(PhysHandoff* handoff) {
    t->SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID));
    t->Detach();
    t->Resume();
@@ -688,7 +852,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // become the idle thread and enable interrupts to start the scheduler
    Thread::Current::BecomeIdle();
-@@ -222,6 +357,10 @@ static int bootstrap2(void*) {
+@@ -222,6 +359,10 @@ static int bootstrap2(void*) {
  
    timeline_threading.Set(current_mono_ticks());
  
@@ -699,7 +863,7 @@ index fdd8b1b7e58..1147e997fc2 100644
    dprintf(SPEW, "top of bootstrap2()\n");
  
    // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
-@@ -231,15 +370,39 @@ static int bootstrap2(void*) {
+@@ -231,15 +372,39 @@ static int bootstrap2(void*) {
  
    // Initialize the rest of the architecture and platform.
    lk_primary_cpu_init_level(LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_ARCH - 1);
@@ -740,7 +904,7 @@ index fdd8b1b7e58..1147e997fc2 100644
  
    // At this point, other cores in the system have been started (though may
    // not yet be online).  Signal that the boot CPU is ready.
-@@ -257,9 +420,17 @@ static int bootstrap2(void*) {
+@@ -257,9 +422,17 @@ static int bootstrap2(void*) {
    // Give the kernel shell an opportunity to run. If it exits this function, continue booting.
    kernel_shell_init();
  
