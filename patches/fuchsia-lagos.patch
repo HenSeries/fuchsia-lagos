@@ -183,6 +183,26 @@ index 0f622fa45ca..9552dde055e 100644
    // Items will be appended to the zbi, and we will boot into the kernel in that zbi.
    shim_helper.Boot();
  }
+diff --git a/zircon/kernel/dev/init.cc b/zircon/kernel/dev/init.cc
+index 071e7934fac..2e8903f65a5 100644
+--- a/zircon/kernel/dev/init.cc
++++ b/zircon/kernel/dev/init.cc
+@@ -10,8 +10,15 @@
+ #include <dev/init.h>
+ #include <phys/handoff/handoff.h>
+ 
++#if defined(__aarch64__)
++void LagosKernelStep(int k);  // [fuchsia-lagos] zircon/kernel/top/main.cc
++#endif
++
+ void DriverHandoffEarly(const PhysHandoff& handoff) {
+   UartDriverHandoffEarly(handoff.uart);
++#if defined(__aarch64__)
++  LagosKernelStep(6);  // [fuchsia-lagos] UART handoff (null console) done
++#endif
+   PlatformDriverHandoffEarly(handoff.arch_handoff);
+ }
+ 
 diff --git a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h b/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
 index aca718b65d5..2024e37ce7c 100644
 --- a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
@@ -393,8 +413,43 @@ index 7dcc03863c6..2089389aa70 100644
  
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
+diff --git a/zircon/kernel/platform/generic-arm/dev-init.cc b/zircon/kernel/platform/generic-arm/dev-init.cc
+index 25c6e727f56..01038c71db5 100644
+--- a/zircon/kernel/platform/generic-arm/dev-init.cc
++++ b/zircon/kernel/platform/generic-arm/dev-init.cc
+@@ -38,24 +38,30 @@ void ArmGicInitLate(const ktl::monostate& no_config) {}
+ 
+ }  // namespace
+ 
++void LagosKernelStep(int k);  // [fuchsia-lagos] zircon/kernel/top/main.cc
++
+ void PlatformDriverHandoffEarly(const ArchPhysHandoff& arch_handoff) {
+   // Configure the GIC first so that the remaining drivers can freely register
+   // interrupt handlers.
+   ktl::visit([](const auto& config) { ArmGicInitEarly(config); }, arch_handoff.gic_driver);
++  LagosKernelStep(7);  // [fuchsia-lagos] GIC early init done
+ 
+   if (arch_handoff.generic32_watchdog_driver) {
+     generic_32bit_watchdog_early_init(*arch_handoff.generic32_watchdog_driver.to_std());
+   }
++  LagosKernelStep(8);  // [fuchsia-lagos] watchdog early init done (or absent)
+ 
+   if (arch_handoff.generic_timer_driver) {
+     ArmGenericTimerInit(*arch_handoff.generic_timer_driver.to_std());
+   }
++  LagosKernelStep(9);  // [fuchsia-lagos] ARM generic timer init done
+ 
+   // Initialize psci before the other power drivers, as they may decide to
+   // override the psci's power registration.
+   if (arch_handoff.psci_driver) {
+     PsciInit(*arch_handoff.psci_driver.to_std(), arch_handoff.psci_cpu_suspend_driver.get());
+   }
++  LagosKernelStep(10);  // [fuchsia-lagos] PSCI init done
+ 
+   if (arch_handoff.motmot_power_driver) {
+     motmot_power_init_early();
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..a8d09b02d5c 100644
+index fdd8b1b7e58..de2b8476151 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
 @@ -30,6 +30,7 @@
@@ -405,7 +460,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
  #include <dev/init.h>
  #include <kernel/cpu.h>
  #include <kernel/init.h>
-@@ -59,6 +60,72 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
+@@ -59,6 +60,75 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
  
  static uint secondary_idle_thread_count;
  
@@ -444,9 +499,9 @@ index fdd8b1b7e58..a8d09b02d5c 100644
 +  }
 +}
 +
-+// Step k (1-based) paints a 60-row band at rows [(k-1)*64, (k-1)*64+60), with a
++// Step k (1-based) paints a 52-row band at rows [(k-1)*56, (k-1)*56+52), with a
 +// 4-row gap so bands can be counted. Colours cycle through 8 so that "N bands,
-+// last one colour X" is unambiguous. Steps 1-16 bisect lk_main, 17-21 bootstrap2.
++// last one colour X" is unambiguous. Steps 1-21 bisect lk_main (6-10 inside DriverHandoffEarly), 22-25 bootstrap2.
 +// Attempt 13 never painted bootstrap2's first band, so the hang is in lk_main.
 +constexpr uint32_t kLagosStepColours[] = {
 +    0xFF00FF00,  // 1 green
@@ -459,8 +514,8 @@ index fdd8b1b7e58..a8d09b02d5c 100644
 +    0xFFFF8000,  // 8 orange
 +};
 +void LagosStep(int k) {
-+  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 64;
-+  LagosFillRows(row0, row0 + 60, kLagosStepColours[(k - 1) % 8]);
++  const uint32_t row0 = static_cast<uint32_t>(k - 1) * 56;
++  LagosFillRows(row0, row0 + 52, kLagosStepColours[(k - 1) % 8]);
 +}
 +
 +// Heartbeat: the bottom strip alternates white/black every 500 ms. It only
@@ -473,12 +528,15 @@ index fdd8b1b7e58..a8d09b02d5c 100644
 +  return 0;
 +}
 +}  // namespace
++
++// [fuchsia-lagos] Callable from other kernel files (driver handoff bisect).
++void LagosKernelStep(int k) { LagosStep(k); }
 +#endif
 +
  static int bootstrap2(void* arg);
  
  KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
-@@ -87,6 +154,23 @@ void lk_main(PhysHandoff* handoff) {
+@@ -87,6 +157,23 @@ void lk_main(PhysHandoff* handoff) {
    // After PostHandoffBootstrap(), gPhysHandoff should now be set.
    ZX_DEBUG_ASSERT(gPhysHandoff != nullptr);
  
@@ -502,7 +560,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    // Care is taken to do this top-level in lk_main() and after
    // PostHandoffBootstrap(). This needs to be top-level as the updating of the
    // stack guard needs to happen in a function that does not return (e.g.,
-@@ -123,6 +207,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -123,6 +210,9 @@ void lk_main(PhysHandoff* handoff) {
  
    // deal with any static constructors
    CallConstructors();
@@ -512,7 +570,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
  
    // we can safely printf now since we have the debuglog, the current thread set
    // which holds (a per-line buffer), and global ctors finished (some of the
-@@ -137,15 +224,33 @@ void lk_main(PhysHandoff* handoff) {
+@@ -137,15 +227,33 @@ void lk_main(PhysHandoff* handoff) {
    // constructors (if needed) have been run.
  
    lk_primary_cpu_init_level(LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_ARCH_EARLY - 1);
@@ -537,27 +595,27 @@ index fdd8b1b7e58..a8d09b02d5c 100644
 +#endif
    DriverHandoffEarly(*gPhysHandoff);
 +#if defined(__aarch64__)
-+  LagosStep(6);  // [fuchsia-lagos]
++  LagosStep(11);  // [fuchsia-lagos]
 +#endif
    lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM_EARLY, LK_INIT_LEVEL_ARCH_PREVM - 1);
 +#if defined(__aarch64__)
-+  LagosStep(7);  // [fuchsia-lagos]
++  LagosStep(12);  // [fuchsia-lagos]
 +#endif
  
    // At this point, the kernel command line and serial are set up.
  
-@@ -159,29 +264,47 @@ void lk_main(PhysHandoff* handoff) {
+@@ -159,29 +267,47 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing arch pre-vm\n");
    arch_prevm_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_ARCH_PREVM, LK_INIT_LEVEL_PLATFORM_PREVM - 1);
 +#if defined(__aarch64__)
-+  LagosStep(8);  // [fuchsia-lagos]
++  LagosStep(13);  // [fuchsia-lagos]
 +#endif
    dprintf(SPEW, "initializing platform pre-vm\n");
    platform_prevm_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM_PREVM, LK_INIT_LEVEL_VM_PREHEAP - 1);
 +#if defined(__aarch64__)
-+  LagosStep(9);  // [fuchsia-lagos]
++  LagosStep(14);  // [fuchsia-lagos]
 +#endif
  
    // perform basic virtual memory setup
@@ -565,7 +623,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    vm_init_preheap();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_VM_PREHEAP, LK_INIT_LEVEL_HEAP - 1);
 +#if defined(__aarch64__)
-+  LagosStep(10);  // [fuchsia-lagos]
++  LagosStep(15);  // [fuchsia-lagos]
 +#endif
  
    // bring up the kernel heap
@@ -573,7 +631,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    heap_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_HEAP, LK_INIT_LEVEL_VM - 1);
 +#if defined(__aarch64__)
-+  LagosStep(11);  // [fuchsia-lagos]
++  LagosStep(16);  // [fuchsia-lagos]
 +#endif
  
    // enable virtual memory
@@ -581,7 +639,7 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    vm_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_VM, LK_INIT_LEVEL_INTC - 1);
 +#if defined(__aarch64__)
-+  LagosStep(12);  // [fuchsia-lagos]
++  LagosStep(17);  // [fuchsia-lagos]
 +#endif
  
    // Give handoff drivers an opportunity to use the VM to map memory.
@@ -589,17 +647,17 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    DriverHandoffPostVm(*gPhysHandoff);
    lk_primary_cpu_init_level(LK_INIT_LEVEL_INTC, LK_INIT_LEVEL_TOPOLOGY - 1);
 +#if defined(__aarch64__)
-+  LagosStep(13);  // [fuchsia-lagos]
++  LagosStep(18);  // [fuchsia-lagos]
 +#endif
  
    // Initialize the lockup detector, after the platform timer has been
    // configured, but before the topology subsystem has brought up other CPUs.
-@@ -197,11 +320,17 @@ void lk_main(PhysHandoff* handoff) {
+@@ -197,11 +323,17 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing system topology\n");
    topology_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_TOPOLOGY, LK_INIT_LEVEL_KERNEL - 1);
 +#if defined(__aarch64__)
-+  LagosStep(14);  // [fuchsia-lagos]
++  LagosStep(19);  // [fuchsia-lagos]
 +#endif
  
    // initialize other parts of the kernel
@@ -607,38 +665,38 @@ index fdd8b1b7e58..a8d09b02d5c 100644
    kernel_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_KERNEL, LK_INIT_LEVEL_THREADING - 1);
 +#if defined(__aarch64__)
-+  LagosStep(15);  // [fuchsia-lagos]
++  LagosStep(20);  // [fuchsia-lagos]
 +#endif
  
    // Mark the current CPU as being active, then create a thread to complete
    // system initialization
-@@ -212,6 +341,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -212,6 +344,9 @@ void lk_main(PhysHandoff* handoff) {
    t->SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID));
    t->Detach();
    t->Resume();
 +#if defined(__aarch64__)
-+  LagosStep(16);  // [fuchsia-lagos]
++  LagosStep(21);  // [fuchsia-lagos]
 +#endif
  
    // become the idle thread and enable interrupts to start the scheduler
    Thread::Current::BecomeIdle();
-@@ -222,6 +354,10 @@ static int bootstrap2(void*) {
+@@ -222,6 +357,10 @@ static int bootstrap2(void*) {
  
    timeline_threading.Set(current_mono_ticks());
  
 +#if defined(__aarch64__)
-+  LagosStep(17);  // [fuchsia-lagos] bootstrap2 running: threads + scheduler
++  LagosStep(22);  // [fuchsia-lagos] bootstrap2 running: threads + scheduler
 +#endif
 +
    dprintf(SPEW, "top of bootstrap2()\n");
  
    // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
-@@ -240,6 +376,15 @@ static int bootstrap2(void*) {
+@@ -240,6 +379,15 @@ static int bootstrap2(void*) {
    platform_init();
    DriverHandoffLate(*gPhysHandoff);
    lk_primary_cpu_init_level(LK_INIT_LEVEL_PLATFORM, LK_INIT_LEVEL_ARCH_LATE - 1);
 +#if defined(__aarch64__)
-+  LagosStep(18);  // [fuchsia-lagos] arch + platform init done
++  LagosStep(23);  // [fuchsia-lagos] arch + platform init done
 +  {
 +    // Start the heartbeat now: timers/interrupts should be live after platform init.
 +    Thread* hb = Thread::Create("lagos-heartbeat", &LagosHeartbeat, nullptr, DEFAULT_PRIORITY);
@@ -649,19 +707,19 @@ index fdd8b1b7e58..a8d09b02d5c 100644
  
    // At this point, other cores in the system have been started (though may
    // not yet be online).  Signal that the boot CPU is ready.
-@@ -257,9 +402,17 @@ static int bootstrap2(void*) {
+@@ -257,9 +405,17 @@ static int bootstrap2(void*) {
    // Give the kernel shell an opportunity to run. If it exits this function, continue booting.
    kernel_shell_init();
  
 +#if defined(__aarch64__)
-+  LagosStep(19);  // [fuchsia-lagos] late init done, starting userboot
++  LagosStep(24);  // [fuchsia-lagos] late init done, starting userboot
 +#endif
 +
    dprintf(SPEW, "starting user space\n");
    userboot_init(ktl::move(handoff_end));
  
 +#if defined(__aarch64__)
-+  LagosStep(20);  // [fuchsia-lagos] userboot launched (userspace)
++  LagosStep(25);  // [fuchsia-lagos] userboot launched (userspace)
 +#endif
 +
    dprintf(SPEW, "moving to last init level\n");
