@@ -203,3 +203,26 @@ although the object file's timestamp changed. The compile cache keys on the prep
 source, and the bytes `.incbin` reads aren't part of it. Fix: give each DTB revision a new
 file name (`lagos-min-v3.dtb`) so the source text changes. Always verify the embedded FDT
 (`totalsize`, a node name such as `cpu@700`) in the built shim before flashing.
+
+## Attempt 17 RESULT (verified flash 11:39:08): **26 bands, then a reboot loop**
+
+![attempt 17: 26 bands right before the reset (video frame)](img/attempt17-26-bands.png)
+
+(Video frame, phone sideways: the top of the screen is on the **right**.) The video shows
+the whole chain in order: BLUE/MAGENTA (shim) → ORANGE/WHITE (physboot) → GRAY + bands
+(kernel) → black (reset). The last bright frame has 26 bands: three full colour cycles,
+then green, blue.
+
+- **The MPIDR fix worked.** Step 26 is after `platform_init`, which starts the secondary
+  CPUs.
+- Step 27 (`DriverHandoffLate`) never paints. The phone resets about 11 s after LK hands
+  off, and the USB log shows a preloader pass every ~16 s.
+- This is the first **fast** reset loop. The kernel panics, and PSCI now works (step 10
+  onward), so Zircon's default panic action, `power_reboot(REBOOT_PANIC)` → PSCI
+  `SYSTEM_RESET`, actually reboots the board. Earlier panics happened before PSCI was up,
+  so they just spun.
+
+Nothing in `UartDriverHandoffLate`/`PlatformDriverHandoffLate` stands out as panicky
+here (null UART, GIC deny-list, no MMIO timer/SMMU/RNG items), and a secondary CPU that just
+came up could be the one panicking. Bisecting further with colours costs a flash per step.
+So the next step is to read the panic itself. Continued in [15](15-framebuffer-console.md).
