@@ -85,3 +85,63 @@ killing them.
 - **CPU0 timer interrupt**: unknown whether it fires. The heartbeat slot
   answers it: if `lagos: heartbeat N s` keeps counting, timer IRQs work.
 - Secondaries after the fix.
+
+## Attempt 22 result: 8/8 CPUs, shell prompt, but no timer interrupt
+
+[Photo](img/attempt22-8cpus-shell.jpg).
+
+- **All 8 CPUs online**: `lagos: smp wait done after 75 ms, ready 0xff online 0xff`.
+  The per-core square row is full for every core: the stage-3 fix was the
+  last thing keeping them out. MediaTek's firmware really drops the PSCI
+  `context_id`; the `gLagosSecondaryContext` table stays.
+- Userspace comes up in **~1.5 s** of kernel time (was ~16.5 s: the SMP
+  wait no longer times out). `vc` (virtual console), archivist,
+  driver_manager, console-launcher, sysmem, and a **`$` shell prompt** on
+  the framebuffer console. No OOM warning with the extra RAM.
+- **Heartbeat slot is empty**: the kernel thread that sleeps 500 ms never
+  wakes, so the timer interrupt is still not delivered.
+
+Timer/GIC snapshot at the SMP wait (CPU0, IRQs unmasked, `DAIF 0x240`):
+
+| register | value | reading |
+|---|---|---|
+| `CNTV_CTL` | `0x5` | enabled, not masked, **ISTATUS = 1**: the virtual timer fired |
+| `CNTV_CVAL` vs `CNTVCT` | `0xc782b7c` < `0xc898e78` | expired **~87 ms** earlier, never serviced |
+| `ISR_EL1` | `0` | the CPU sees no pending IRQ |
+| `ICC_HPPIR1` | `0x3ff` | no pending Group-1 interrupt at the CPU interface |
+| `ICC_IGRPEN1` / `PMR` / `RPR` | `1` / `0xf0` / `0xff` | enabled, unmasked, idle |
+| `GICD_CTLR` | `0x12` | ARE_NS + EnableGrp1A (non-secure view) |
+| GICR0 `ISENABLER0` | `0x0800000f` | SGI 0-3 (IPIs) and **PPI 27 enabled** |
+| GICR0 `ISPENDR0` | `0x893f0000` | **PPI 27 pending** at the redistributor |
+| GICR0 `IGROUPR0` | `0` | Secure-only register when DS = 0: RAZ to us, not informative |
+| `IPRIORITYR6` | `0xa0a0a0a0` | priority 0xa0 < PMR |
+
+So the interrupt is **pending and enabled in the redistributor, but the CPU
+interface never presents it**. The LK log in expdb has the likely reason:
+`[BLDR] next is GZ at 0x47EC00000`. The preloader boots **MediaTek
+GenieZone**, a hypervisor, after ATF. With GZ at EL2 (consistent with
+secondaries entering at EL1 even though PSCI normally enters at the highest
+NS EL, and with `context_id` getting lost), EL1's `ICC_*` accesses may
+really be the *virtual* CPU interface (`ICV_*`). Interrupts then reach us
+only if GZ injects them.
+
+## Attempt 23: active IRQ-path probe
+
+`LagosIrqProbe()` (kernel/mp.cc) runs right after the SMP-wait snapshot,
+with IRQs masked so nothing is taken. It raises three interrupts at the CPU0
+redistributor, and after each one prints the redistributor's
+pending/active/enabled bits next to `HPPIR1` and `ISR_EL1`:
+
+1. **SGI 15 to self** via `ICC_SGI1R_EL1` (the IPI path)
+2. **PPI 30, the physical timer** (`CNTP` with an expired compare value),
+   unused by Zircon
+3. **PPI 27, the virtual timer** as left by the kernel
+
+It also prints `ID_AA64PFR0_EL1`, `ICC_AP1R0` and `MPIDR`. If PPI 30 or the
+SGI shows up in `HPPIR1`/`ISR` but PPI 27 doesn't, the hypervisor treats the
+virtual timer specially. The fix is then `kernel.arm64.force-pct=true`, the
+physical timer. If none of them show up, the whole physical IRQ path is
+owned by GZ.
+
+Also: 16 pinned slots instead of 12, and the boot `CMDLINE` line no longer
+gets pinned (it matched "panic" via `halt-on-panic`).

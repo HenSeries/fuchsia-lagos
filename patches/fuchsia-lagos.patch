@@ -353,10 +353,10 @@ index 071e7934fac..2e8903f65a5 100644
  }
  
 diff --git a/zircon/kernel/kernel/mp.cc b/zircon/kernel/kernel/mp.cc
-index df739487fa6..1dc3f49d0ec 100644
+index df739487fa6..2eface554ab 100644
 --- a/zircon/kernel/kernel/mp.cc
 +++ b/zircon/kernel/kernel/mp.cc
-@@ -512,6 +512,66 @@ zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline) {
+@@ -512,6 +512,130 @@ zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline) {
    return mp.ready_cpu_event.Wait(deadline);
  }
  
@@ -417,13 +417,77 @@ index df739487fa6..1dc3f49d0ec 100644
 +           sgi[0xc04 / 4], sgi[0xd00 / 4], sgi[0x418 / 4]);
 +  }
 +}
++
++#define LAGOS_MSR(reg, v) __asm__ volatile("msr " #reg ", %0" ::"r"(uint64_t{v}))
++
++// [fuchsia-lagos] Attempt 23: active interrupt-path probe, run with IRQs
++// masked (so nothing is actually taken). The preloader log says "next is GZ":
++// MediaTek GenieZone sits at EL2. If it virtualizes the GIC CPU interface
++// (HCR_EL2.IMO), our ICC_* reads are really ICV_* and physical interrupts only
++// reach us if GZ injects them. The probe raises three interrupts at the CPU0
++// redistributor and looks at the redistributor (physical), HPPIR1 and ISR_EL1
++// (what EL1 sees) after each:
++//   SGI 15 to self      (ICC_SGI1R)    -- what IPIs use
++//   PPI 30 = CNTP timer (expired CVAL) -- the physical timer, unused by Zircon
++//   PPI 27 = CNTV timer                 -- already pending in attempt 22
++void LagosIrqProbeOne(const char* name, volatile uint32_t* sgi, uint32_t bit) {
++  // Spin ~2 ms on the counter (13 MHz).
++  const uint64_t until = LAGOS_MRS(CNTVCT_EL0) + 26000;
++  while (LAGOS_MRS(CNTVCT_EL0) < until) {
++  }
++  printf("lagos[probe %s]: GICR pend %d act %d en %d | HPPIR1 %#lx ISR %#lx\n", name,
++         (sgi[0x200 / 4] >> bit) & 1, (sgi[0x300 / 4] >> bit) & 1, (sgi[0x100 / 4] >> bit) & 1,
++         LAGOS_MRS(S3_0_C12_C12_2), LAGOS_MRS(ISR_EL1));
++}
++
++void LagosIrqProbe() {
++  void* p = nullptr;
++  if (VmAspace::kernel_aspace()->AllocPhysical(
++          "lagos-gicr0-rw", 0x20000, &p, PAGE_SIZE_SHIFT, 0x0c040000, 0,
++          ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE) !=
++      ZX_OK) {
++    printf("lagos[probe]: cannot map GICR0\n");
++    return;
++  }
++  volatile uint32_t* sgi = static_cast<volatile uint32_t*>(p) + 0x10000 / 4;
++  const uint64_t daif = LAGOS_MRS(DAIF);
++  __asm__ volatile("msr daifset, #2" ::: "memory");
++
++  printf("lagos[probe]: PFR0 %#lx AP1R0 %#lx MPIDR %#lx\n", LAGOS_MRS(ID_AA64PFR0_EL1),
++         LAGOS_MRS(S3_0_C12_C9_0), LAGOS_MRS(MPIDR_EL1));
++
++  // 1) SGI 15 to ourselves: Aff3/2/1 = 0, TargetList bit 0 (Aff0 = 0).
++  sgi[0x100 / 4] = 1u << 15;
++  LAGOS_MSR(S3_0_C12_C11_5, (uint64_t{15} << 24) | 1);
++  __asm__ volatile("isb" ::: "memory");
++  LagosIrqProbeOne("sgi15", sgi, 15);
++
++  // 2) Physical timer, PPI 30: enable at the redistributor, fire immediately.
++  sgi[0x400 / 4 + 30 / 4] = (sgi[0x400 / 4 + 30 / 4] & ~(0xffu << 16)) | (0xa0u << 16);
++  sgi[0x100 / 4] = 1u << 30;
++  LAGOS_MSR(CNTP_CVAL_EL0, LAGOS_MRS(CNTPCT_EL0));
++  LAGOS_MSR(CNTP_CTL_EL0, 1);
++  __asm__ volatile("isb" ::: "memory");
++  LagosIrqProbeOne("cntp30", sgi, 30);
++  printf("lagos[probe]: CNTP_CTL %#lx\n", LAGOS_MRS(CNTP_CTL_EL0));
++
++  // 3) Virtual timer, PPI 27 (state left by the kernel's own timer driver).
++  LagosIrqProbeOne("cntv27", sgi, 27);
++
++  // Undo: physical timer off, PPI 30 disabled and cleared, SGI 15 cleared.
++  LAGOS_MSR(CNTP_CTL_EL0, 0);
++  sgi[0x180 / 4] = (1u << 30) | (1u << 15);
++  sgi[0x280 / 4] = (1u << 30) | (1u << 15);
++  __asm__ volatile("dsb sy; isb" ::: "memory");
++  LAGOS_MSR(DAIF, daif);
++}
 +}  // namespace
 +#endif
 +
  namespace {
  
  void mp_all_cpu_startup_sync_hook(unsigned int rl) {
-@@ -525,7 +585,36 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
+@@ -525,7 +649,37 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
    // the CPU silicon (something which can only be determined by the core itself
    // as it comes up).
    constexpr zx_duration_mono_t kCpuStartupTimeout = ZX_SEC(30);
@@ -436,6 +500,7 @@ index df739487fa6..1dc3f49d0ec 100644
 +  {
 +    const int max_count = static_cast<int>(arch_max_num_cpus());
 +    LagosSmpDiag("smp-wait");
++    LagosIrqProbe();
 +    const zx_instant_mono_t start = current_mono_time();
 +    bool second = false;
 +    while (current_mono_time() - start < ZX_SEC(15)) {
@@ -679,7 +744,7 @@ index 7dcc03863c6..723475edfd8 100644
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
 diff --git a/zircon/kernel/platform/debug.cc b/zircon/kernel/platform/debug.cc
-index 71704a5a22a..b36718a092b 100644
+index 71704a5a22a..e1a816a93da 100644
 --- a/zircon/kernel/platform/debug.cc
 +++ b/zircon/kernel/platform/debug.cc
 @@ -643,7 +643,216 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
@@ -712,7 +777,7 @@ index 71704a5a22a..b36718a092b 100644
 +// wrap over it. Slot 0 is reserved for the heartbeat; the other slots rotate.
 +// Each slot is 2 text rows (180 chars). The scrolling console follows below.
 +constexpr uint32_t kLagosPinTop = 496;
-+constexpr uint32_t kLagosPinSlots = 12;
++constexpr uint32_t kLagosPinSlots = 16;
 +constexpr uint32_t kLagosPinSlotChars = 180;
 +constexpr uint32_t kLagosConTop = kLagosPinTop + kLagosPinSlots * 32 + 8;
 +constexpr uint32_t kLagosConLines = (1632 - kLagosConTop) / 16;
@@ -809,7 +874,7 @@ index 71704a5a22a..b36718a092b 100644
 +  if (LagosLineStarts("lagos: heartbeat")) {
 +    slot = 0;
 +  } else if (LagosLineStarts("lagos") || LagosLineHas("PANIC") || LagosLineHas("ASSERT") ||
-+             LagosLineHas("panic")) {
++             LagosLineHas("panic (")) {
 +    slot = gLagosPinNext;
 +    gLagosPinNext = gLagosPinNext + 1 < kLagosPinSlots ? gLagosPinNext + 1 : 1;
 +  } else {
