@@ -98,3 +98,10 @@ is used directly; corrected there.) No USB reset followed: `abort()` just spins.
 decompressed kernel: the archive is 4-byte aligned, the payload is byte-identical to
 `fuchsia.zbi`. No Fuchsia rebuild was needed; the shim, physboot and kernel are attempt 11's
 binaries, so the same colour legend applies (MAGENTA → CYAN → ORANGE → WHITE → GRAY).
+
+## Attempt 12 RESULT (verified flash 10:54:53): **GRAY — the Zircon kernel runs on lagos** 🎉
+
+Every stage of the chain executed: shim → physboot (entry, memory + MMU, kernel load and
+relocation) → handoff → `lk_main` past `PostHandoffBootstrap`. The USB observer stayed
+quiet for the full 3 minutes after the jump: no panic-reboot. Continued in
+[14](14-zircon-kernel-runs.md).
