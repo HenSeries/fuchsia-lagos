@@ -352,6 +352,80 @@ index 071e7934fac..2e8903f65a5 100644
    PlatformDriverHandoffEarly(handoff.arch_handoff);
  }
  
+diff --git a/zircon/kernel/dev/interrupt/gic/v3/arm_gicv3.rs b/zircon/kernel/dev/interrupt/gic/v3/arm_gicv3.rs
+index b3a1cf881a8..b7e1b21238f 100644
+--- a/zircon/kernel/dev/interrupt/gic/v3/arm_gicv3.rs
++++ b/zircon/kernel/dev/interrupt/gic/v3/arm_gicv3.rs
+@@ -939,6 +939,7 @@ fn gic_init() -> Result<(), Status> {
+     while i < gic_max_int {
+         gicd_write32(regs::gicd_icenabler(i / 32), !0);
+         gicd_write32(regs::gicd_icpendr(i / 32), !0);
++        gicd_write32(regs::gicd_icactiver(i / 32), !0); // [fuchsia-lagos] stale bootloader state
+         gicd_write32(regs::gicd_igroupr(i / 32), !0);
+         gicd_write32(regs::gicd_igrpmodr(i / 32), 0);
+         i += 32;
+@@ -1084,6 +1085,9 @@ fn gic_init_percpu_early(init: PercpuInit) {
+     gicr_write32(cpu, regs::gicr_icenabler0(), 0xffffffff);
+     if init == PercpuInit::Boot {
+         gicr_write32(cpu, regs::gicr_icpendr0(), !0);
++        // [fuchsia-lagos] Also drop any active state left behind by the bootloader, which ran
++        // with ICC_CTLR_EL1.EOImode = 1 (see `regs::clear_eoimode`).
++        gicr_write32(cpu, regs::gicr_icactiver0(), !0);
+     }
+     gicr_wait_for_rwp(cpu);
+ 
+@@ -1096,6 +1100,9 @@ fn gic_init_percpu_early(init: PercpuInit) {
+         debug_assert!(sre);
+     }
+ 
++    // [fuchsia-lagos] EOI must also deactivate (EOImode = 0); don't inherit the bootloader's mode.
++    let _ = regs::clear_eoimode();
++
+     // set priority threshold to max.
+     regs::write_pmr(0xff);
+ 
+diff --git a/zircon/kernel/dev/interrupt/gic/v3/regs.rs b/zircon/kernel/dev/interrupt/gic/v3/regs.rs
+index 95d8f298da9..809015bb5bc 100644
+--- a/zircon/kernel/dev/interrupt/gic/v3/regs.rs
++++ b/zircon/kernel/dev/interrupt/gic/v3/regs.rs
+@@ -187,6 +187,11 @@ pub(super) fn gicr_icpendr0() -> Offset<u32, RwSafe> {
+     Offset::new(GICR_SGI_BASE + 0x0280)
+ }
+ 
++/// GICR_ICACTIVER0: Interrupt Clear-Active Register 0 for SGIs and PPIs.
++pub(super) fn gicr_icactiver0() -> Offset<u32, RwSafe> {
++    Offset::new(GICR_SGI_BASE + 0x0380)
++}
++
+ /// GICR_IGRPMOD0: Interrupt Group Modifier Register 0 for SGIs and PPIs.
+ pub(super) fn gicr_igrpmod0() -> Offset<u32, RwSafe> {
+     Offset::new(GICR_SGI_BASE + 0x0d00)
+@@ -298,6 +303,25 @@ const ICC_EOIR1_EL1: SysReg<spec::ICC_EOIR1_EL1, u64> = SysReg::new();
+ const ICC_IAR1_EL1: SysReg<spec::ICC_IAR1_EL1, u64> = SysReg::new();
+ const ICC_SGI1R_EL1: SysReg<spec::ICC_SGI1R_EL1, u64> = SysReg::new();
+ const ICH_HCR_EL2: SysReg<spec::ICH_HCR_EL2, u64> = SysReg::new();
++const ICC_CTLR_EL1: SysReg<spec::ICC_CTLR_EL1, u64> = SysReg::new();
++
++/// ICC_CTLR_EL1.EOImode: when set, ICC_EOIR1_EL1 only drops priority and a separate
++/// ICC_DIR_EL1 write is needed to deactivate.
++const ICC_CTLR_EL1_EOIMODE: u64 = 1 << 1;
++
++/// [fuchsia-lagos] Clears ICC_CTLR_EL1.EOImode so that ICC_EOIR1_EL1 both drops priority and
++/// deactivates, which is what `write_eoir` callers assume. The register is never written
++/// otherwise, so its value is whatever the bootloader left: on the Moto G06 (MediaTek LK) that is
++/// EOImode = 1, and every interrupt stayed active after its first EOI -- the timer PPI fired
++/// exactly once. Returns the previous value. See fuchsia-lagos/docs/16.
++pub(super) fn clear_eoimode() -> u64 {
++    let ctlr = ICC_CTLR_EL1.read();
++    if ctlr & ICC_CTLR_EL1_EOIMODE != 0 {
++        ICC_CTLR_EL1.write(ctlr & !ICC_CTLR_EL1_EOIMODE);
++        isb();
++    }
++    ctlr
++}
+ 
+ /// Writes ICC_PMR_EL1, the interrupt priority mask.
+ pub(super) fn write_pmr(val: u32) {
 diff --git a/zircon/kernel/kernel/mp.cc b/zircon/kernel/kernel/mp.cc
 index df739487fa6..2eface554ab 100644
 --- a/zircon/kernel/kernel/mp.cc

@@ -145,3 +145,46 @@ owned by GZ.
 
 Also: 16 pinned slots instead of 12, and the boot `CMDLINE` line no longer
 gets pinned (it matched "panic" via `halt-on-panic`).
+
+## Attempt 23 result: the real bug is EOImode, not the hypervisor
+
+[Photo](img/attempt23-irq-probe.jpg).
+
+```
+lagos[probe]: PFR0 0x11112222 AP1R0 0 MPIDR 0x81000000
+lagos[probe sgi15]:  GICR pend 1 act 0 en 1 | HPPIR1 0xf ISR 0x80
+lagos[probe cntp30]: GICR pend 1 act 0 en 1 | HPPIR1 0xf ISR 0x80
+lagos[probe cntv27]: GICR pend 1 act 1 en 1 | HPPIR1 0xf ISR 0x80
+```
+
+- **SGI 15 reaches the CPU**: `HPPIR1 = 15` and `ISR_EL1.I = 1`. The
+  physical IRQ path GICR → CPU interface → EL1 works. GenieZone is not
+  hiding interrupts. (It stayed the highest pending, so the CNTP line
+  says nothing new about PPI 30.)
+- **PPI 27 (the kernel's timer) is pending *and active*.** Re-reading
+  attempt 22's photo: `ISACTIVER0 0x80` wraps to `00000` on the next line,
+  so it is `0x08000000`: PPI 27 was already active then. I had misread it
+  as bit 31.
+
+An active interrupt is never signalled again. The timer fired **once**, the
+kernel took it (`IAR`), wrote `EOIR`, and it stayed active. The reason is
+in the same snapshot: `ICC_CTLR_EL1 = 0x8402`, and bit 1 is **EOImode = 1**.
+In that mode `EOIR` only drops the running priority, and deactivation needs
+a separate `ICC_DIR_EL1` write. Zircon's GICv3 driver never writes
+`ICC_CTLR_EL1`; it inherits whatever the bootloader left (MediaTek LK uses
+EOImode 1) and assumes EOImode 0. Linux writes `ICC_CTLR_EL1` explicitly,
+so it never sees this. Every SGI/IPI likewise worked once per CPU and then
+went dead.
+
+## Attempt 24: fix
+
+`dev/interrupt/gic/v3`:
+
+- `regs::clear_eoimode()` clears `ICC_CTLR_EL1.EOImode` in
+  `gic_init_percpu_early`, on every CPU, before PMR/IGRPEN1 are set up.
+- On boot, `GICR_ICACTIVER0 = ~0` per CPU and `GICD_ICACTIVER<n> = ~0` for
+  SPIs, which drops any active state the bootloader left behind.
+
+Expected: `lagos: heartbeat N s` appears in pinned slot 0 and keeps
+counting, the right-edge bar blinks, and the snapshot shows
+`CTLR 0x8400` with PPI 27 not active.
