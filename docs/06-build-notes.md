@@ -71,36 +71,50 @@ it is specifically the Bazel linux-sandbox environment that `rustc` can't run in
 
 ### Root cause (the real one) and fix
 
-The culprit is **Bazel 8.x sandbox-directory reuse** (`--reuse_sandbox_directories`, on by
-default). Reusing a sandbox dir corrupts `Rustc` actions on this host — rustc exits 1 with
-no stderr. The tell: the exact action **succeeds with `--sandbox_debug`**, and per Bazel's
-docs `--sandbox_debug` *disables sandbox reuse*. Confirmed on a fresh action (after
-`fx bazel clean`): sandbox ON + reuse OFF → `Compiling Rust bin runner ... linux-sandbox` →
-`Build completed successfully`.
+The culprit is **memory exhaustion under Bazel's default concurrency**, not rustc itself.
+`fx build` runs ninja at `-j12`, ninja fans out many GN `bazel_action` targets at once, and
+each drives sandboxed Bazel compiles. On this host (**22 GB RAM, no swap**) the concurrent
+sandboxed rust/C++ actions exhaust memory and the kernel **kills** processes. The symptoms
+look like two different bugs but are the same thing:
 
-So the fix keeps the sandbox and only disables reuse. Applied in **two** places:
+- `rustc` actions: *"error executing Rustc command (Exit 1)"* with **no stderr** (the
+  process was killed before it could print anything), and *"Use --sandbox_debug…"*.
+- other actions (e.g. `GenFidlResponseFile`): literally *"(Killed)"*.
 
-1. `build/bazel/templates/template.bazelrc` — the source template (persists across `fx gen`):
-   ```
-   build --noreuse_sandbox_directories
-   ```
-2. The already-generated `out/<build-dir>/gen/build/bazel/workspace/.bazelrc`.
+> The long `...bazel_target_can_only_be_referenced_by_one_bazel_action` filename is just the
+> GN `bazel_action` **stamp output** (`build/bazel/bazel_action.gni`), not the error.
 
-> **Dead ends we ruled out** (don't repeat them):
-> - `build --spawn_strategy=local` — fixes rustc but then product assembly fails copying a
->   GN board-input-bundle *directory* (`obj/boards/x64/paver`): *"the source path is
->   neither a regular file nor a symlink to a regular file"*. Unsandboxed, Bazel exposes GN
->   outputs as symlinked dirs the copy tool rejects.
-> - `build --strategy=Rustc=local` — does **not** actually reroute these actions; they still
->   run sandboxed and fail. (An x64 build appeared to pass with it only because the rust
->   host tools were already cached from manual runs.)
+**Proof:** the exact same host-tool set that dies at default concurrency builds cleanly with
+`--jobs=4` (1151 actions, all `linux-sandbox`, `exit=0`). Low-concurrency / isolated builds
+always worked — which is why `--sandbox_debug` and single-target tests misleadingly
+"passed" earlier.
+
+**Fix** — cap Bazel's local concurrency (and, kept from the earlier hypothesis, disable
+sandbox reuse). `--jobs` only throttles **Bazel**, not ninja's C++ compiles, so Zircon still
+builds at full speed; only the problematic bazel rust host tools are serialized. In
+`build/bazel/templates/template.bazelrc` (persists across `fx gen`) and the live workspace rc:
+
+```
+build --noreuse_sandbox_directories
+build --jobs=4
+```
+
+> **Alternative / faster:** add swap (we have >180 GB disk free). With e.g. a 32 GB swapfile
+> the `--jobs` cap can be raised or dropped. Needs `sudo`:
+> `sudo fallocate -l 32G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`
+
+> **Dead ends we ruled out** (don't repeat):
+> - `--spawn_strategy=local` — fixes the kills but then product assembly fails copying a GN
+>   board-input-bundle *directory* (`obj/boards/x64/paver`): *"source path is neither a
+>   regular file nor a symlink"* (unsandboxed, GN outputs are symlinked dirs the copy tool
+>   rejects).
+> - `--strategy=Rustc=local` — doesn't reroute the actions; they still run sandboxed. An x64
+>   build only appeared to pass with it because the rust host tools were already cached.
 >
-> Keeping the sandbox (reuse off) is what lets both rustc *and* the assembly copy work.
+> Keeping the sandbox + capping concurrency lets both rustc *and* the assembly copy work.
 
-Validated end-to-end on x64 earlier (`fuchsia.zbi` 32 MB); the arm64 build uses the same fix.
-
-> If `fx set`/`fx gen` ever regenerates the workspace rc and the template edit was lost,
-> re-apply the one `build --noreuse_sandbox_directories` line.
+> If `fx set`/`fx gen` regenerates the workspace rc and the template edit was lost, re-apply
+> the two lines above.
 
 ## Build artifacts (bringup.x64)
 
