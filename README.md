@@ -17,10 +17,10 @@ community/history of the Fuchsia tree.
 
 | | |
 |---|---|
-| **Phase** | Hito 0 bring-up — **the Fuchsia boot shim runs end-to-end on the device** ✅ (attempt 10, BLUE) |
+| **Phase** | Hito 0 bring-up — **the Zircon kernel runs on the device** ✅ (attempt 12, GRAY) |
 | **Target SoC** | MediaTek **MT6768** (basis of "Helio G81") |
 | **Device** | Motorola Moto G06 `lagos` (XT2535-1), bootloader unlocked, A/B slots |
-| **Next milestone** | physboot → Zircon kernel (attempt 11: framebuffer paints through physboot and `lk_main`) |
+| **Next milestone** | kernel init → userspace (attempt 13: progress bands + timer heartbeat, [docs/14](docs/14-zircon-kernel-runs.md)) |
 | **Output channel** | No UART tap yet; progress is read as solid colours painted into LK's framebuffer ([docs/12](docs/12-attempt7-framebuffer-printf.md), [docs/13](docs/13-attempt10-blue-shim-works.md)) |
 
 ## The milestone ladder
@@ -63,7 +63,8 @@ docs/
   08-flashing-lagos.md    Flash / recovery procedure, UART test-point research
   09..11                  Attempts 2-6; ROOT CAUSE: LK gunzips the kernel (expdb log)
   12-attempt7-framebuffer-printf.md  Colour paints as a UART-free printf (attempts 7-9)
-  13-attempt10-blue-shim-works.md    DTB-overlap bug; shim runs end-to-end; attempt 11
+  13-attempt10-blue-shim-works.md    DTB-overlap bug; shim runs; embed:zbi needs a cpio; GRAY
+  14-zircon-kernel-runs.md           Zircon kernel runs; kernel progress bands + heartbeat
 patches/                  Local patches to the Fuchsia checkout (git apply)
 device-tree/
   dts/vendor_boot-fdt0.dts   Decompiled device tree (6277 lines) — the main artifact
