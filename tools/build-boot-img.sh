@@ -21,5 +21,15 @@ for f in "$SHIM" "$ZBI"; do [ -f "$f" ] || { echo "missing build artifact: $f"; 
 
 mkdir -p "$REPO/dist"
 echo "shim: $(du -h "$SHIM" | cut -f1)   zbi: $(du -h "$ZBI" | cut -f1)"
-mkbootimg --header_version 4 --kernel "$SHIM" --ramdisk "$ZBI" --out "$OUT"
+
+# Attempt 2: embed the ZBI into the shim so it does not depend on the bootloader
+# initrd (the GKI ramdisk concatenation corrupts it). The shim is built with
+# set_zbi_boot("embed:zbi"). See docs/09.
+PACKED="$REPO/dist/lagos-shim-embedded.bin"
+python3 "$FUCHSIA/zircon/kernel/phys/linuxboot-embed.py" \
+    --output "$PACKED" --shim "$SHIM" "$ZBI"
+echo "packed shim+zbi: $(du -h "$PACKED" | cut -f1)"
+
+# Wrap the self-contained packed image as the boot kernel (ramdisk now irrelevant).
+mkbootimg --header_version 4 --kernel "$PACKED" --out "$OUT"
 echo "built: $OUT ($(du -h "$OUT" | cut -f1))"
