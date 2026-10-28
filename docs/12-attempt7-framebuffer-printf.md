@@ -92,3 +92,17 @@ A third paint, **YELLOW** (`0xFFFFFF00`), goes right after the constructor:
 | GREEN | even the clean DTB dies in the constructor → `InitMemory` / MMU enable on this SoC |
 | **YELLOW** | memory parsed and MMU up; died in `InitItems()` (GIC / timer / UART / CPU matchers) |
 | **BLUE** | the whole devicetree path works → `Boot()` → physboot/Zircon is the next frontier |
+
+### Operational lesson from the first attempt-8 flash (2026-10-28 10:18)
+
+`fastboot flash boot_a` reported `Sending OKAY` and then
+**`Writing 'boot_a' FAILED (usb_read failed: No such device)`** — this phone's flaky USB
+enumeration dropped the link mid-write. The partition's state after that is unknown
+(old image intact / new image complete / partial). Rules going forward:
+
+- **Never interpret a boot until the flash printed `Writing 'boot_a' OKAY`.** A failed
+  write followed by a reboot can show a *previous* attempt's colour and mislead the bisect.
+- A USB observer showing *no* preloader cycling after the reboot rules out a corrupt
+  (bootlooping) partition but **not** "old image still there".
+- Mitigations: reseat the cable / use another (USB 2.0) port, or flash via antumbra
+  through the preloader — its DA writes have never failed on this device.
