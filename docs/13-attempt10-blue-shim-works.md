@@ -81,3 +81,20 @@ Changed files (Fuchsia checkout, local patches):
 - `zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc` — MAGENTA/RED
 - `zircon/kernel/phys/physboot.cc` — CYAN/ORANGE/WHITE (arm64 only)
 - `zircon/kernel/top/main.cc` — GRAY (arm64 only)
+
+## Attempt 11 RESULT (verified flash 10:51:59): **RED**
+
+The shim reached `Boot()` and took the failure path. The cause was in the packaging, not
+the code. `set_zbi_boot("embed:zbi")` makes `GetDevicetreeBootZbi()` search the embedded
+data for a **file named `zbi`**, in a newc cpio or in `BOOTLOADER_FILE` ZBI items. We had
+embedded the raw `fuchsia.zbi`, so the lookup found nothing and returned an empty ZBI, and
+`boot.Init()` rejected it. (Docs [09](09-attempt2-embedded-zbi.md) wrongly claimed a raw ZBI
+is used directly; corrected there.) No USB reset followed: `abort()` just spins.
+
+## Attempt 12: embed the ZBI inside a cpio
+
+`tools/build-boot-img.sh` now writes `dist/lagos-zbi.cpio`, a newc archive with one member
+`zbi` (the whole `fuchsia.zbi`) plus `TRAILER!!!`, and embeds that instead. Verified in the
+decompressed kernel: the archive is 4-byte aligned, the payload is byte-identical to
+`fuchsia.zbi`. No Fuchsia rebuild was needed; the shim, physboot and kernel are attempt 11's
+binaries, so the same colour legend applies (MAGENTA → CYAN → ORANGE → WHITE → GRAY).

@@ -20,8 +20,14 @@ The Fuchsia devicetree boot shim can get its boot ZBI three ways, selected by th
 | **`embed:<name>`** | **an image compiled into the shim binary** (`GetLinuxbootEmbeddedImage()`) |
 
 With `embed:`, the shim **ignores the bootloader initrd entirely** and boots a ZBI that was
-packed into the shim at build time — so the GKI ramdisk concatenation can't corrupt it. If
-the embedded blob is a raw ZBI, it's used directly (the name after `embed:` is ignored).
+packed into the shim at build time — so the GKI ramdisk concatenation can't corrupt it.
+
+> **CORRECTION (attempt 11, see [13](13-attempt10-blue-shim-works.md)):** this doc originally
+> said a raw embedded ZBI is used directly and the name after `embed:` is ignored. **That is
+> wrong.** `GetDevicetreeBootZbi()` looks up a *file* with that name inside the embedded
+> data, which must be a newc cpio (initramfs) or a ZBI of `BOOTLOADER_FILE` items. A raw
+> ZBI fails the lookup and `Boot()` aborts. `tools/build-boot-img.sh` now wraps the ZBI in a
+> cpio as `zbi`.
 
 ### What we changed
 

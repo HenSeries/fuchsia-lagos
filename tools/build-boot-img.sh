@@ -25,9 +25,33 @@ echo "shim: $(du -h "$SHIM" | cut -f1)   zbi: $(du -h "$ZBI" | cut -f1)"
 # Attempt 2: embed the ZBI into the shim so it does not depend on the bootloader
 # initrd (the GKI ramdisk concatenation corrupts it). The shim is built with
 # set_zbi_boot("embed:zbi"). See docs/09.
+#
+# Attempt 12: the shim's `embed:zbi` does NOT use a raw embedded ZBI. It looks up a
+# FILE named "zbi" inside the embedded data, which must be a Linux newc cpio
+# (initramfs) or a ZBI of BOOTLOADER_FILE items (GetDevicetreeBootZbi() in
+# zircon/kernel/phys/boot-shim/devicetree.cc). Embedding the raw fuchsia.zbi made
+# that lookup fail -> Boot() aborted -> attempt 11 painted RED. Wrap it in a cpio.
+CPIO="$REPO/dist/lagos-zbi.cpio"
+python3 -I - "$ZBI" "$CPIO" <<'PY'
+import sys
+data = open(sys.argv[1], 'rb').read()
+def member(name: bytes, payload: bytes, mode: int) -> bytes:
+    nm = name + b'\0'
+    fields = [1, mode, 0, 0, 1, 0, len(payload), 0, 0, 0, 0, len(nm), 0]
+    hdr = b'070701' + b''.join(b'%08x' % f for f in fields)
+    out = hdr + nm
+    out += b'\0' * (-len(out) % 4)
+    out += payload
+    out += b'\0' * (-len(out) % 4)
+    return out
+blob = member(b'zbi', data, 0o100644) + member(b'TRAILER!!!', b'', 0)
+open(sys.argv[2], 'wb').write(blob)
+print(f'cpio: {len(blob)} bytes (zbi {len(data)} bytes as "zbi")')
+PY
+
 PACKED="$REPO/dist/lagos-shim-embedded.bin"
 python3 "$FUCHSIA/zircon/kernel/phys/linuxboot-embed.py" \
-    --output "$PACKED" --shim "$SHIM" "$ZBI"
+    --output "$PACKED" --shim "$SHIM" "$CPIO"
 echo "packed shim+zbi: $(du -h "$PACKED" | cut -f1)"
 
 # GZIP the kernel. The lagos expdb LK log proved Motorola/MediaTek LK gunzips the
