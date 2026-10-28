@@ -133,3 +133,10 @@ enumeration dropped the link mid-write. The partition's state after that is unkn
   (bootlooping) partition but **not** "old image still there".
 - Mitigations: reseat the cable / use another (USB 2.0) port, or flash via antumbra
   through the preloader — its DA writes have never failed on this device.
+
+## Attempt 9 RESULT (verified flash, 2026-10-28 10:32): still **GREEN**
+
+With the MMU off the paints cannot fault, so GREEN is now unambiguous: the shim dies inside
+`BootShimHelper`'s constructor **before** any MMU work. The MMU was never the problem.
+Reading the constructor (`InitMemory` in `zircon/kernel/phys/boot-shim/devicetree.cc`)
+found the bug, and it was ours. See [13](13-attempt10-blue-shim-works.md).

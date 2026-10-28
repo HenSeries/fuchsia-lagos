@@ -7,8 +7,13 @@
 	#size-cells = <2>;
 	interrupt-parent = <&gic>;
 
+	/* Attempt 10: NO stdout-path on purpose. With it, InitMemory() selects the
+	 * dw8250 driver and PrintMemoryRanges() spins in `while (!TxReady())` on
+	 * MTK-specific register offsets (CPR @0xf4, USR @0x7c) that we have never
+	 * validated on this SoC -- an unbounded wait with no UART tap to tell us.
+	 * The shim/Zircon run with the null console until the ctor is proven to
+	 * complete (YELLOW); the UART comes back as its own bisect step. docs/12. */
 	chosen {
-		stdout-path = &uart0;
 	};
 
 	cpus {

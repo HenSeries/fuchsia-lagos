@@ -1,0 +1,453 @@
+diff --git a/build/bazel/templates/template.bazelrc b/build/bazel/templates/template.bazelrc
+index 120a67039ad..1521ed75e11 100644
+--- a/build/bazel/templates/template.bazelrc
++++ b/build/bazel/templates/template.bazelrc
+@@ -8,6 +8,21 @@
+ # to improve hermeticity and caching.
+ build --incompatible_strict_action_env=true
+ 
++# [fuchsia-lagos LOCAL PATCH] Bazel 8.x sandbox-directory REUSE corrupts Rustc
++# actions on this host (Arch): sandboxed `rustc` exits 1 with no stderr. The same
++# action succeeds with --sandbox_debug, which (per Bazel docs) disables sandbox
++# reuse. So disable reuse and KEEP the sandbox (a blanket --spawn_strategy=local
++# instead breaks the assembly copy of GN board-input-bundle dirs, and
++# --strategy=Rustc=local does not actually reroute these actions). Local dev only.
++# See fuchsia-lagos/docs/06-build-notes.md.
++build --noreuse_sandbox_directories
++# [fuchsia-lagos LOCAL PATCH] Cap Bazel local concurrency. This host (22 GB RAM, no
++# swap) OOM-kills sandboxed actions when ninja fans out many bazel_actions at once
++# (symptom: "rustc exit 1 no stderr" and "(Killed)"). --jobs only throttles Bazel,
++# not ninja's C++ compiles, so Zircon still builds fast. Proven: jobs=4 builds the
++# host tools cleanly where the default concurrency kills them.
++build --jobs=4
++
+ # Do not create runfiles symlink forests for external repositories
+ # under .runfiles/_main/external/repo in addition to .runfiles/repo.
+ #
+diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
+index 0f622fa45ca..9552dde055e 100644
+--- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
++++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
+@@ -5,6 +5,7 @@
+ // https://opensource.org/licenses/MIT
+ 
+ #include <lib/boot-shim/devicetree-boot-shim.h>
++#include <lib/mmio-ptr/mmio-ptr.h>
+ 
+ #include <phys/boot-shim/devicetree.h>
+ 
+@@ -12,21 +13,144 @@
+ 
+ namespace {
+ 
++void LagosBootProgress(int stage);
++
+ constexpr ShimOptions kOptions = {
+     .generate_peripheral_ranges = true,
+-    .enable_mmu = true,
++    // [fuchsia-lagos] Attempt 9: run the shim with the MMU OFF. Attempt 8 (clean
++    // embedded DTB) still stuck at GREEN, i.e. inside the BootShimHelper ctor,
++    // which parses memory AND enables the MMU; and the YELLOW paint right after
++    // it would itself fault if the framebuffer ended up unmapped. With the MMU off
++    // every paint is a physical write that cannot fault on mapping, so the colours
++    // reflect ctor/InitItems progress unambiguously. physboot sets up its own
++    // MMU afterwards, so this is a supported mode. See fuchsia-lagos/docs/12.
++    .enable_mmu = false,
++    // [fuchsia-lagos] Attempt 11: MAGENTA right before the jump into physboot,
++    // RED if Boot() fails (bad ZBI / load / append) and is about to abort().
++    .boot_progress = LagosBootProgress,
+ };
+ 
+ using Shim = Arm64StandardBootShimItems::Shim<boot_shim::DevicetreeBootShim>;
+ 
+ constexpr const char* kShimName = "linux-arm64-boot-shim";
+ 
++// [fuchsia-lagos] Visual "printf" for a device with no UART tap yet. Motorola's
++// LK leaves the display scanning a BGRA8888 framebuffer and never turns it off
++// at the kernel jump (that's why its logo persists after handoff). From the LK
++// log in expdb: mblock "framebuffer" @0x781b0000 sz 0x1050000; OVL layers use
++// 720x1640, pitch 2944, frames at +0, +0x4ac000 and +0x958000. Painting all
++// three frames a solid colour proves this code ran and how far boot got:
++//   GREEN  = shim entry reached (right after the TOPRGU disable)
++//   BLUE   = InitItems() succeeded (DTB parsed; memory/UART/GIC matched) -> Boot()
++// Plain RAM, so a volatile pointer is enough (MMU off at entry; identity-mapped
++// RAM once the shim enables it). See fuchsia-lagos/docs/12.
++constexpr uint64_t kLagosFbBase = 0x781b0000;
++constexpr uint64_t kLagosFbPaintBytes = 0xE04000;  // 3 frames x 0x4ac000 (< 0x1050000)
++constexpr uint32_t kLagosGreen = 0xFF00FF00;        // bytes B,G,R,A = 00 FF 00 FF
++constexpr uint32_t kLagosYellow = 0xFFFFFF00;       // bytes B,G,R,A = 00 FF FF FF
++constexpr uint32_t kLagosBlue = 0xFF0000FF;         // bytes B,G,R,A = FF 00 00 FF
++constexpr uint32_t kLagosMagenta = 0xFFFF00FF;      // shim: about to jump into physboot
++constexpr uint32_t kLagosRed = 0xFFFF0000;          // shim: Boot() failed, aborting
++
++// [fuchsia-lagos] Attempt 7 painted GREEN and never BLUE: the shim dies between
++// entry and InitItems() when fed Motorola's MediaTek DTB (huge, 4-cell GIC/timer
++// interrupts, dynamic reserved-memory children without `reg`). Attempt 8 feeds the
++// shim our own standards-clean lagos-min.dtb (CPUs, GICv3 3-cell, timer, PSCI,
++// dw8250-compatible UART, and a CONSERVATIVE /memory: only LK's kernel+ramdisk
++// window [0x40000000,0x4bc80000) plus the framebuffer bank, so the allocator can
++// never clobber ATF/TEE/modem). Embedded via .incbin, 8-byte aligned as FDT needs.
++// The bootloader's x0 DTB is then ignored. See fuchsia-lagos/docs/12.
++__asm__(
++    ".section .rodata,\"a\"\n"
++    ".balign 8\n"
++    ".global lagos_min_dtb\n"
++    "lagos_min_dtb:\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min.dtb\"\n"
++    ".global lagos_min_dtb_end\n"
++    "lagos_min_dtb_end:\n"
++    ".previous\n");
++extern "C" const uint8_t lagos_min_dtb[];
++extern "C" const uint8_t lagos_min_dtb_end[];
++
++// [fuchsia-lagos] Attempt 10: the embedded DTB must NOT be handed to the shim
++// in place. InitMemory() registers two "special" ranges: the whole loaded
++// image [PHYS_LOAD_ADDRESS, +linuxboot image_size) as kPhysKernel, and the DTB
++// blob as kDevicetreeBlob. With .incbin the blob sits INSIDE the image, the two
++// allocated types overlap, and memalloc's FindNormalizedRanges() rejects it:
++//   ZX_ASSERT_MSG(..., "Pool::Init(): bad input: the provided ranges feature
++//   overlap among different allocated types ...")
++// abort() with no PSCI set up yet == hang on GREEN, exactly attempts 8 and 9.
++// So copy the blob to a fixed, page-aligned spot near the top of LK's staging
++// window (inside our /memory bank 1, far above the ~29 MB image at 0x40080000
++// and above LK's initrd at 0x47c80000). See fuchsia-lagos/docs/12.
++constexpr uint64_t kLagosDtbCopy = 0x4bb80000;
++
++void* LagosCopyDtbOutOfImage() {
++  auto* dst = reinterpret_cast<volatile uint8_t*>(kLagosDtbCopy);
++  const size_t n = static_cast<size_t>(lagos_min_dtb_end - lagos_min_dtb);
++  for (size_t i = 0; i < n; ++i) {
++    dst[i] = lagos_min_dtb[i];
++  }
++  return reinterpret_cast<void*>(kLagosDtbCopy);
++}
++
++void LagosPaint(uint32_t bgra) {
++  auto* fb = reinterpret_cast<volatile uint32_t*>(kLagosFbBase);
++  for (uint64_t i = 0; i < kLagosFbPaintBytes / sizeof(uint32_t); ++i) {
++    fb[i] = bgra;
++  }
++}
++
++void LagosBootProgress(int stage) { LagosPaint(stage == 0 ? kLagosMagenta : kLagosRed); }
++
+ }  // namespace
+ 
+ void PhysMain(void* flat_devicetree_blob, arch::EarlyTicks ticks) {
+-  BootShimHelper<Shim, kOptions> shim_helper(kShimName, flat_devicetree_blob);
++  // [fuchsia-lagos] FIRST THING, before touching anything else: disable the
++  // MediaTek TOPRGU boot watchdog. The bootloader arms it and it resets the SoC
++  // ~20 s into boot; relying on Zircon's kernel watchdog driver (fed by the
++  // generic32 ZBI item) proved insufficient on the Moto G06 — the device kept
++  // bootlooping, so the kernel never got far enough to pet it. The MMU is off at
++  // phys entry (arch/arm64/phys/start.S), so this is a plain physical write.
++  // Base 0x10007000 is `toprgu@10007000` in the lagos DTB; WDT_MODE (+0x00)
++  // needs key 0x22 in bits[31:24], EN is bit0 -> 0x22000000 = key | EN=0.
++  // See fuchsia-lagos/docs/10.
++  {
++    constexpr uint64_t kMtkToprguBase = 0x10007000;
++    constexpr uint32_t kMtkWdtModeKeyDisabled = 0x22000000;
++    MmioWrite32(kMtkWdtModeKeyDisabled,
++                reinterpret_cast<MMIO_PTR volatile uint32_t*>(kMtkToprguBase));
++  }
++
++  // (The attempt-5 diagnostic hang that used to live here was removed once the
++  // lagos expdb LK log showed our code never ran at all: LK gunzips the kernel
++  // unconditionally and our raw Image failed with "gzip header is not correct",
++  // so the fix is to ship the packed shim gzipped. See fuchsia-lagos/docs/11.)
++
++  // [fuchsia-lagos] GREEN: we are executing.
++  LagosPaint(kLagosGreen);
++
++  // [fuchsia-lagos] Use the embedded clean DTB instead of the bootloader's (x0),
++  // copied OUT of the image first (attempt 10, see LagosCopyDtbOutOfImage).
++  (void)flat_devicetree_blob;
++  void* lagos_dtb = LagosCopyDtbOutOfImage();
++
++  BootShimHelper<Shim, kOptions> shim_helper(kShimName, lagos_dtb);
++  // [fuchsia-lagos] YELLOW: BootShimHelper constructed (InitMemory done, MMU up).
++  LagosPaint(kLagosYellow);
++
+   // Items will be initialized, and the matching process will begin.
+   ZX_ASSERT(shim_helper.InitItems());
++
++  // [fuchsia-lagos] BLUE: the devicetree was parsed and items matched; next is Boot().
++  LagosPaint(kLagosBlue);
++  // [fuchsia-lagos] Force booting the ZBI embedded into this shim binary (via
++  // linuxboot-embed) instead of the bootloader-provided initrd. On the Moto G06
++  // (GKI / MediaTek LK) the initrd is a concatenation of init_boot + vendor_boot
++  // ramdisks, which is not a clean ZBI, so the default initrd path fails. A raw
++  // embedded ZBI is used directly regardless of the path after "embed:".
++  // See fuchsia-lagos/docs/09.
++  shim_helper.set_zbi_boot("embed:zbi");
+   // Items will be appended to the zbi, and we will boot into the kernel in that zbi.
+   shim_helper.Boot();
+ }
+diff --git a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h b/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
+index aca718b65d5..2024e37ce7c 100644
+--- a/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
++++ b/zircon/kernel/phys/boot-shim/include/phys/boot-shim/devicetree.h
+@@ -113,6 +113,12 @@ struct ShimOptions {
+ 
+   // When true the BootDriver will enable the MMU.
+   bool enable_mmu = false;
++
++  // [fuchsia-lagos] Optional progress hook called from Boot(): stage 0 right
++  // before jumping into the ZBI kernel (physboot), stage 1 on the failure path
++  // right before abort(). Used to paint the framebuffer on a device with no
++  // UART tap. See fuchsia-lagos/docs/13.
++  void (*boot_progress)(int stage) = nullptr;
+ };
+ 
+ // Used to conditionally provide an `AddressSpace` object when `ShimOptions::enable_mmu` is true.
+@@ -256,9 +262,15 @@ class BootShimHelper {
+           shim_.Check("Failed to append boot loader items to data ZBI",
+                       shim_.AppendItems(boot.DataZbi()))) {
+         boot.Log();
++        if constexpr (options.boot_progress != nullptr) {
++          options.boot_progress(0);
++        }
+         boot.Boot();
+       }
+     }
++    if constexpr (options.boot_progress != nullptr) {
++      options.boot_progress(1);
++    }
+     printf("Boot failure. Aborting...\n");
+     abort();
+   }
+diff --git a/zircon/kernel/phys/lib/boot-shim/include/lib/boot-shim/watchdog.h b/zircon/kernel/phys/lib/boot-shim/include/lib/boot-shim/watchdog.h
+index 5807894b5a0..57d5279b56e 100644
+--- a/zircon/kernel/phys/lib/boot-shim/include/lib/boot-shim/watchdog.h
++++ b/zircon/kernel/phys/lib/boot-shim/include/lib/boot-shim/watchdog.h
+@@ -162,8 +162,104 @@ struct QualcomMsmWatchdog {
+   }
+ };
+ 
++// [fuchsia-lagos] MediaTek TOPRGU watchdog (mt6768 / mt6589 family), as on the
++// Motorola Moto G06 ("lagos", MT6768). Register map from Linux drivers/watchdog/mtk_wdt.c:
++//   WDT_MODE (+0x00): bit0 = WDT_MODE_EN; writes must carry WDT_MODE_KEY (0x22 in
++//                     bits [31:24]) or the hardware ignores them. The key is
++//                     write-only and does not read back.
++//   WDT_RST  (+0x08): writing WDT_RST_RELOAD (0x1971) reloads (pets) the counter.
++// Without this entry the shim never sees the WDT, Zircon never pets it, and the
++// MediaTek bootloader-armed watchdog resets the SoC ~20 s into boot (the bootloop
++// seen in fuchsia-lagos attempts 1 and 2). See fuchsia-lagos/docs/10.
++struct MediatekToprguWatchdog {
++  static constexpr auto kCompatibleDevices = std::to_array<std::string_view>(
++      {"mediatek,mt6768-wdt", "mediatek,mt6589-wdt", "mediatek,toprgu"});
++
++  static constexpr uint32_t kModeOffset = 0x0;
++  static constexpr uint32_t kRestartOffset = 0x8;
++  static constexpr uint32_t kModeKey = 0x22000000;
++  static constexpr uint32_t kModeEnable = 0x1;
++  static constexpr uint32_t kRestartReload = 0x1971;
++
++  struct DecodedNode {
++    uint64_t addr;
++    uint64_t size;
++  };
++
++  template <typename MmioHelper>
++  static std::optional<zbi_dcfg_generic32_watchdog_t> MaybeCreate(
++      const devicetree::PropertyDecoder& decoder,
++      const DevicetreeBootShimMmioObserver* mmio_observer) {
++    std::optional<DecodedNode> decoded_node = DecodeNode(decoder);
++    if (!decoded_node) {
++      return std::nullopt;
++    }
++
++    (*mmio_observer)(MmioRange{
++        .address = decoded_node->addr,
++        .size = static_cast<size_t>(decoded_node->size),
++    });
++
++    return zbi_dcfg_generic32_watchdog_t{
++        // Reload the counter: write the reload magic to WDT_RST.
++        .pet_action =
++            {
++                .addr = decoded_node->addr + kRestartOffset,
++                .clr_mask = 0xffffffff,
++                .set_mask = kRestartReload,
++            },
++        // Used by GenericWatchdogItemBase to DETECT whether the WDT is enabled by
++        // reading WDT_MODE and testing set_mask. The key does not read back, so
++        // detection must test only the EN bit. (A write through this action would
++        // lack the key and be ignored by hardware, which is fine: we never want
++        // to re-enable it.)
++        .enable_action =
++            {
++                .addr = decoded_node->addr + kModeOffset,
++                .clr_mask = kModeEnable,
++                .set_mask = kModeEnable,
++            },
++        // Disable: write key with EN (and every other mode bit) cleared.
++        .disable_action =
++            {
++                .addr = decoded_node->addr + kModeOffset,
++                .clr_mask = 0xffffffff,
++                .set_mask = kModeKey,
++            },
++        // The bootloader-armed timeout is ~20 s; pet well inside that.
++        .watchdog_period_nsec = zx::sec(5).to_nsecs(),
++        .flags = 0,
++    };
++  }
++
++  static std::optional<DecodedNode> DecodeNode(const devicetree::PropertyDecoder& decoder) {
++    auto [reg_prop, compatible_prop] = decoder.FindProperties("reg", "compatible");
++    (void)compatible_prop;  // only `reg` is needed; keep the binding warning-free
++    if (!reg_prop) {
++      return std::nullopt;
++    }
++
++    auto reg = reg_prop->AsReg(decoder);
++    if (!reg || reg->size() == 0) {
++      return std::nullopt;
++    }
++
++    auto base_reg = (*reg)[0];
++    std::optional<uint64_t> base_addr = base_reg.address();
++    std::optional<uint64_t> base_size = base_reg.size();
++    if (!base_addr || !base_size) {
++      return std::nullopt;
++    }
++
++    return DecodedNode{
++        .addr = *base_addr,
++        .size = *base_size,
++    };
++  }
++};
++
+ template <template <typename...> class Template, WatchdogMmioHelper MmioHelper>
+-using WithAllWatchdogs = Template<MmioHelper, QualcomMsmWatchdog>;
++using WithAllWatchdogs = Template<MmioHelper, QualcomMsmWatchdog, MediatekToprguWatchdog>;
+ 
+ }  // namespace boot_shim
+ 
+diff --git a/zircon/kernel/phys/physboot.cc b/zircon/kernel/phys/physboot.cc
+index 7dcc03863c6..021382e6bf4 100644
+--- a/zircon/kernel/phys/physboot.cc
++++ b/zircon/kernel/phys/physboot.cc
+@@ -54,6 +54,29 @@ enum ModuleId : unsigned int {
+ 
+ constexpr ktl::string_view kElfPhysKernel = "vmzircon";
+ 
++// [fuchsia-lagos] Framebuffer "printf" for the Moto G06 (MT6768), which has no
++// UART tap: LK leaves the panel scanning a BGRA8888 framebuffer at 0x781b0000
++// (3 frames of 0x4ac000 bytes). Physical == virtual here: MMU off at entry,
++// identity-mapped RAM after InitMemory (the framebuffer bank is RAM in the lagos
++// devicetree, and first-fit allocation never reaches it). Colours:
++//   CYAN   = physboot entered (shim jumped successfully)
++//   ORANGE = physboot InitMemory done, its own MMU is up
++//   WHITE  = kernel loaded/patched/relocated, about to hand off to vmzircon
++// arm64-only, local bring-up hack. See fuchsia-lagos/docs/13.
++#if defined(__aarch64__)
++void LagosPhysbootPaint(uint32_t bgra) {
++  auto* fb = reinterpret_cast<volatile uint32_t*>(uintptr_t{0x781b0000});
++  for (size_t i = 0; i < 0xE04000 / sizeof(uint32_t); ++i) {
++    fb[i] = bgra;
++  }
++}
++#else
++void LagosPhysbootPaint(uint32_t) {}
++#endif
++constexpr uint32_t kLagosCyan = 0xFF00FFFF;
++constexpr uint32_t kLagosOrange = 0xFFFF8000;
++constexpr uint32_t kLagosWhite = 0xFFFFFFFF;
++
+ void LogSerial(FILE* out = stdout) {
+   fprintf(out, "%s: Console configured as ", ProgramName());
+   BootOptions::Get()->Show("kernel.serial"sv, false, out);
+@@ -139,6 +162,7 @@ void RelocateElfKernel(ElfImage& kernel) {
+     Allocation::GetPool().PrintMemoryRanges(gSymbolize->name());
+   }
+ 
++  LagosPhysbootPaint(kLagosWhite);  // [fuchsia-lagos]
+   prep.DoHandoff(uart, kernel_storage.zbi().storage(), package, patch_info);
+ }
+ 
+@@ -146,6 +170,7 @@ void RelocateElfKernel(ElfImage& kernel) {
+ 
+ [[noreturn]] void ZbiMain(void* zbi_ptr, EarlyBootZbi zbi, arch::EarlyTicks ticks) {
+   gBootTimes.Set(PhysBootTimes::kZbiEntry, ticks);
++  LagosPhysbootPaint(kLagosCyan);  // [fuchsia-lagos]
+ 
+   // Symbolize uses its output for the panic path.  So that should not be
+   // redirected to the log code path.  Instead keep it pointed at a copy of the
+@@ -161,6 +186,7 @@ void RelocateElfKernel(ElfImage& kernel) {
+ 
+   AddressSpace aspace;
+   InitMemory(zbi_ptr, ktl::move(zbi), &aspace);
++  LagosPhysbootPaint(kLagosOrange);  // [fuchsia-lagos]
+ 
+   // This marks the interval between handoff from the boot loader (kZbiEntry)
+   // and phys environment setup with identity-mapped memory management et al.
+diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
+index fdd8b1b7e58..e42dd096799 100644
+--- a/zircon/kernel/top/main.cc
++++ b/zircon/kernel/top/main.cc
+@@ -30,6 +30,7 @@
+ #include <zircon/tls.h>
+ 
+ #include <arch/current_thread.h>
++#include <arch/ops.h>
+ #include <dev/init.h>
+ #include <kernel/cpu.h>
+ #include <kernel/init.h>
+@@ -87,6 +88,23 @@ void lk_main(PhysHandoff* handoff) {
+   // After PostHandoffBootstrap(), gPhysHandoff should now be set.
+   ZX_DEBUG_ASSERT(gPhysHandoff != nullptr);
+ 
++#if defined(__aarch64__)
++  // [fuchsia-lagos] GRAY: the Zircon kernel proper is running on the Moto G06.
++  // Paint LK's framebuffer (0x781b0000, BGRA8888, 3 frames) through the
++  // physmap, which physboot built over all RAM (the framebuffer bank is RAM in
++  // the lagos devicetree). Done this early so no PMM page there is in use yet.
++  // Local bring-up hack. See fuchsia-lagos/docs/13.
++  {
++    auto* fb = reinterpret_cast<volatile uint32_t*>(gPhysHandoff->physmap_base + 0x781b0000);
++    for (size_t i = 0; i < 0xE04000 / sizeof(uint32_t); ++i) {
++      fb[i] = 0xFF808080;
++    }
++    // The physmap is cacheable; push the paint out to DRAM where the display
++    // engine reads it.
++    arch_clean_cache_range(reinterpret_cast<vaddr_t>(fb), 0xE04000);
++  }
++#endif
++
+   // Care is taken to do this top-level in lk_main() and after
+   // PostHandoffBootstrap(). This needs to be top-level as the updating of the
+   // stack guard needs to happen in a function that does not return (e.g.,
+diff --git a/zircon/system/ulib/uart/include/lib/uart/dw8250.h b/zircon/system/ulib/uart/include/lib/uart/dw8250.h
+index 6287b65f2cf..b2bcb6a42a2 100644
+--- a/zircon/system/ulib/uart/include/lib/uart/dw8250.h
++++ b/zircon/system/ulib/uart/include/lib/uart/dw8250.h
+@@ -272,7 +272,10 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
+   static constexpr std::string_view kConfigName = "dw8250";
+ 
+   static constexpr auto kDevicetreeBindings =
+-      cpp20::to_array<std::string_view>({"snps,dw-apb-uart", "goog,goog-dw-apb-uart"});
++      // [fuchsia-lagos] MediaTek mt6577-uart is a 16550 with 32-bit registers
++      // (reg-io-width=4, reg-shift=2), which dw8250 drives. See fuchsia-lagos/docs/07.
++      cpp20::to_array<std::string_view>(
++          {"snps,dw-apb-uart", "goog,goog-dw-apb-uart", "mediatek,mt6577-uart"});
+ 
+   template <typename... Args>
+   explicit Driver(Args&&... args) : Base(std::forward<Args>(args)...) {}
+@@ -288,8 +291,12 @@ struct Driver : public DriverBase<Driver, ZBI_KERNEL_DRIVER_DW8250_UART, zbi_dcf
+     std::optional<uint32_t> io_width = io_width_prop ? io_width_prop->AsUint32() : std::nullopt;
+     std::optional<uint32_t> reg_shift = reg_shift_prop ? reg_shift_prop->AsUint32() : std::nullopt;
+ 
+-    // Must provide io-width and reg-shift of 32 bits.
+-    return io_width == 4 && reg_shift == 2;
++    // Must be 32-bit registers. [fuchsia-lagos] MediaTek mt6577-uart devicetree
++    // nodes (as emitted by the Motorola/MediaTek bootloader) usually omit
++    // reg-io-width/reg-shift because the downstream 8250_mtk driver hardcodes
++    // 4/2; default the absent values to 4/2 so the bootloader-provided DTB works
++    // without us having to rewrite it. See fuchsia-lagos/docs/07.
++    return io_width.value_or(4) == 4 && reg_shift.value_or(2) == 2;
+   }
+ 
+   template <class IoProvider>

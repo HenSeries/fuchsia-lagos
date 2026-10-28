@@ -17,11 +17,11 @@ community/history of the Fuchsia tree.
 
 | | |
 |---|---|
-| **Phase** | Recon — complete ✅ |
+| **Phase** | Hito 0 bring-up — **the Fuchsia boot shim runs end-to-end on the device** ✅ (attempt 10, BLUE) |
 | **Target SoC** | MediaTek **MT6768** (basis of "Helio G81") |
 | **Device** | Motorola Moto G06 `lagos` (XT2535-1), bootloader unlocked, A/B slots |
-| **Next milestone** | Hito 0 — boot Zircon to a serial console |
-| **Blocker to clear** | Is `fastboot boot` (RAM boot) allowed by Motorola's LK bootloader? |
+| **Next milestone** | physboot → Zircon kernel (attempt 11: framebuffer paints through physboot and `lk_main`) |
+| **Output channel** | No UART tap yet; progress is read as solid colours painted into LK's framebuffer ([docs/12](docs/12-attempt7-framebuffer-printf.md), [docs/13](docs/13-attempt10-blue-shim-works.md)) |
 
 ## The milestone ladder
 
@@ -58,6 +58,13 @@ docs/
   03-recon-log.md         Exactly how the device tree was extracted (reproducible)
   04-feasibility.md       Milestone ladder, blockers, risk, decisions
   05-next-steps.md        Concrete roadmap from here
+  06-build-notes.md       Building Fuchsia on this host (Bazel OOM fix)
+  07-lagos-board-plan.md  Board plan; MediaTek UART == dw8250
+  08-flashing-lagos.md    Flash / recovery procedure, UART test-point research
+  09..11                  Attempts 2-6; ROOT CAUSE: LK gunzips the kernel (expdb log)
+  12-attempt7-framebuffer-printf.md  Colour paints as a UART-free printf (attempts 7-9)
+  13-attempt10-blue-shim-works.md    DTB-overlap bug; shim runs end-to-end; attempt 11
+patches/                  Local patches to the Fuchsia checkout (git apply)
 device-tree/
   dts/vendor_boot-fdt0.dts   Decompiled device tree (6277 lines) — the main artifact
   raw/vendor_boot-fdt0.dtb   Carved FDT blob
