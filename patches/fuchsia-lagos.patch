@@ -25,7 +25,7 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..63c8c47bf59 100644
+index 0f622fa45ca..9860f9acce3 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -93,7 +93,7 @@ index 0f622fa45ca..63c8c47bf59 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v4.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v5.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
