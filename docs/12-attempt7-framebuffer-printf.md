@@ -49,3 +49,46 @@ still unmistakable versus the logo.
 
 Same pipeline as attempt 6: `fx build` → `tools/build-boot-img.sh` (embed + gzip) → flash
 `boot_a` → look at the screen. Recovery unchanged.
+
+## Attempt 7 RESULT (2026-10-28, flashed 10:10:40): **solid GREEN**, nothing else
+
+The framebuffer printf works, and it answers two questions at once:
+
+1. **Our code runs on the Moto G06** — now a visual fact, not an inference from a silent
+   watchdog. The shim's first instructions (TOPRGU disable, paint) executed.
+2. **It never reached BLUE.** The shim dies somewhere between the GREEN paint and
+   `InitItems()` returning — i.e. inside `BootShimHelper`'s constructor (`InitMemory`, then
+   enabling the MMU) or inside the item matchers. Every one of those consumes **Motorola's
+   MediaTek DTB** handed over in `x0`: hundreds of nodes, 4-cell GIC/timer interrupt
+   specifiers, `reserved-memory` children allocated dynamically (no `reg`), and enough
+   LK-injected reservations to plausibly overflow the shim's 512-range table
+   (`ZX_ASSERT_MSG(recorded, "Insufficient space to record devicetree memory reservations")`).
+   With the watchdog off, an assert/fault just hangs — green forever.
+
+## Attempt 8: feed the shim our own device tree
+
+The shim is handed `lagos-min.dtb` (embedded with `.incbin`, 8-byte aligned) instead of
+`x0`. It is small and standards-clean — 8 CPUs via PSCI, `arm,gic-v3` with 3-cell
+interrupts, `arm,armv8-timer`, the `mediatek,mt6577-uart` node with `reg-shift`/`reg-io-width`
+for `dw8250`, a `chosen/stdout-path` — and, deliberately, a **conservative `/memory`**:
+
+```
+memory@40000000 {
+    reg = <0x0 0x40000000 0x0 0x0bc80000>,   /* LK's kernel+ramdisk window, 188 MB */
+          <0x0 0x781b0000 0x0 0x01050000>;   /* LK's framebuffer, so paints stay mapped */
+};
+```
+
+The first bank is exactly LK's `kernel_addr_mb` + `ramdisk_addr_mb` staging window; nothing
+else lives there (ATF sits at `0x4ce00000`, TEE/GenieZone/modem/SCP higher), so the shim's
+allocator can never clobber secure firmware. The second bank keeps the framebuffer mapped
+once the MMU is on; if the allocator uses it you'll see garbage — harmless and itself a
+sign of life. No `toprgu` node: the WDT is already disabled first-thing.
+
+A third paint, **YELLOW** (`0xFFFFFF00`), goes right after the constructor:
+
+| screen ends as | meaning |
+|---|---|
+| GREEN | even the clean DTB dies in the constructor → `InitMemory` / MMU enable on this SoC |
+| **YELLOW** | memory parsed and MMU up; died in `InitItems()` (GIC / timer / UART / CPU matchers) |
+| **BLUE** | the whole devicetree path works → `Boot()` → physboot/Zircon is the next frontier |

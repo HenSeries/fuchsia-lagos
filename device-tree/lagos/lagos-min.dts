@@ -39,10 +39,16 @@
 		clock-frequency = <13000000>;
 	};
 
-	/* 1 GB low bank (matches stock static /memory; MT6768 passes the rest dynamically) */
+	/* Conservative RAM for bring-up: ONLY LK's own kernel+ramdisk staging window
+	 * [0x40000000, 0x4bc80000) = kernel_addr_mb (0x40080000+0x7c00000) + ramdisk_addr_mb
+	 * (0x47c80000+0x4000000). Nothing else lives there (ATF is at 0x4ce00000, TEE/GZ/
+	 * modem/SCP/SSPM higher), so the shim's allocator cannot clobber secure firmware.
+	 * Second bank = LK's framebuffer mblock (0x781b0000, 0x1050000) so the post-MMU
+	 * paints stay mapped (it may get allocated from -> visible garbage, harmless). */
 	memory@40000000 {
 		device_type = "memory";
-		reg = <0x0 0x40000000 0x0 0x3e605000>;
+		reg = <0x0 0x40000000 0x0 0x0bc80000>,
+		      <0x0 0x781b0000 0x0 0x01050000>;
 	};
 
 	gic: interrupt-controller@c000000 {

@@ -1,0 +1,173 @@
+
+######## LK: kernel size / gunzip / decompress / handoff ########
+  --- @662 ---
+    [1723] mblock_reserve-R start: 0xb7300000, sz: 0x8c00000 map:0 name:avb
+  > [1723] [avb] img_auth_required = 0
+    [1725] avb_vbmeta_image.c[1725] :[1725] 207[1725] : ERROR: [1725] Hash does not match!
+    [1725] avb_slot_verify.c[1725] :[1725] 784[1725] : ERROR: [1725] vbmeta_a[1725] : Error verifying vbmeta image: [1725] HASH_MISMATCH[1725]
+  --- @687 ---
+    [3533] [LK] ota-fail
+  > [3533] boot state: orange
+    [3533] [PROFILE] ::: lvl(1) load boot image takes 1810 ms
+    [3580] [ATM] is disabled
+  --- @688 ---
+    [3533] boot state: orange
+  > [3533] [PROFILE] ::: lvl(1) load boot image takes 1810 ms
+    [3580] [ATM] is disabled
+    [3580] [ATM] is disabled
+  --- @777 ---
+    [3770] fail to send root of trust info. : 0xffffffff
+  > [3772] kernel real kernel_sz=0x01c03e38
+    [3772] Wake up iothread.
+    [3772] gzip header is not correct. Error!
+  --- @779 ---
+    [3772] Wake up iothread.
+  > [3772] gzip header is not correct. Error!
+    [3772] [PROFILE] ::: lvl(1) decompress_kernel takes 0 ms
+    [3772] Wait for iothread...
+  --- @780 ---
+    [3772] gzip header is not correct. Error!
+  > [3772] [PROFILE] ::: lvl(1) decompress_kernel takes 0 ms
+    [3772] Wait for iothread...
+    [3772] Met bootstrap2.
+  --- @782 ---
+    [3772] Wait for iothread...
+  > [3772] Met bootstrap2.
+    [3772] mblock_reserve-R start: 0x76cf0000, sz: 0x10000 map:0 name:SPM-reserved
+    [3772] [spmfw] addr=0x76cf0000 size=0x10000
+  --- @925 ---
+    [3797] policy_entry_idx = 0
+  > [3797] img_auth_required = 0
+    [4025] ccci_load_raw_data: addr[0xa2000000],size[0x012a6be4] @modem
+    [4025] image verify:partition[modem], image_name[md1rom], addr[0xa2000000], size[0x12a6bf0]
+  --- @2178 ---
+    <7011> [SEC_POLICY] lock_state = 0x3
+  > <7011> [PART] img_auth_required = 0
+    <7013> [PART] Image with header, name: tinysys-sspm, addr: FFFFFFFFh, mode: FFFFFFFFh, size:498879, magic:58881688h
+    <7014> [PART] part: sspm_a img: tinysys-sspm cert vfy(0 ms)
+  --- @2460 ---
+    <7732> MD_INFO: 0x0
+  > <7732> BOOT_TIME: 7670
+    <7732> DA_INFO: 0x0
+    <7732> DA_INFO: 0x0
+  --- @2553 ---
+    <7774> #T#trustzone post init=16
+  > <7774> [BLDR] Others, jump to ATF
+    <7775>
+    [BLDR] jump to 0x4C400000
+  --- @2555 ---
+    <7775>
+  > [BLDR] jump to 0x4C400000
+    <7775> [BLDR] <0x4C400000>=0xEA000007
+    <7776> [BLDR] <0x4C400004>=0xEA00930B
+  --- @2703 ---
+    [SD0] csd.write_prot_grpsz = 31, csd.erase_sctsz = 1024
+  > [72] Jumping to kaeru stage 2
+    _
+    | | ____ _  ___ _ __ _   _
+
+######## RESET attribution (stage / watchdog / reason) ########
+  --- @222 ---
+    kedump: lkdump debug init ok
+  > kedump: boot_reason(4)
+    RAM_CONSOLE. boot_arg(PL2LK): sram_addr:0x10ea00, sram_size:0x540, def_type:0x1, memory_info_offset:0x7c0
+    RAM_CONSOLE. start: 0x10ea00, size: 0x540
+  --- @226 ---
+    RAM_CONSOLE. lk last status: 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0 0x0
+  > RAM_CONSOLE. wdt_status 0x800, fiq_step 0x0, exp_type 0x0
+    RAM_CONSOLE. set reboot reason info done
+    kedump: last is full pmic reset!
+  --- @239 ---
+    kedump: ram_console_should_restore
+  > RAM_CONSOLE. wdt_status 0x6, fiq_step 0x0, exp_type 0x6
+    RAM_CONSOLE. set reboot reason info done
+    RAM_CONSOLE detect abnormal boot exp_type:0x6
+  --- @253 ---
+    [693] [RTC] irqsta = 0x1, pdn1 = 0x0, pdn2 = 0x201, spar0 = 0x80, spar1 = 0x800
+  > [694] [WDT] WDT get boot reason is 4 from pre-loader
+    [694] [is_force_boot] Bypass Kernel Power off charging mode and enter Normal Boot
+    [694] [kernel_power_off_charging_detection] Turn off HW Led
+  --- @1684 ---
+    <40> #T#GPIO=1
+  > <40> [RGU] rst from: <41> lk
+    <41> [RGU] STA from reg:       0x40000000
+    <41> [RGU] MODE:               0x1A5
+  --- @1686 ---
+    <41> [RGU] STA from reg:       0x40000000
+  > <41> [RGU] MODE:               0x1A5
+    <42> [RGU] STA:                0xE0000000
+    <42> [RGU] LENGTH:             0xFFE0
+  --- @1688 ---
+    <42> [RGU] STA:                0xE0000000
+  > <42> [RGU] LENGTH:             0xFFE0
+    <43> [RGU] INTERVAL:           0xFFF
+    <43> [RGU] SWSYSRST:           0x8000
+  --- @1715 ---
+    <58> [RGU] rgu_update_reg: 0, bits: 0x300, addr: 0xx, val: 0x100070A0
+  > <58> [RGU] mtk_wdt_pre_init: MTK_WDT_DEBUG_CTL(0x207F1)
+    <59> [RGU] mtk_wdt_pre_init: MTK_WDT_DEBUG_CTL2(0xFF)
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_LATCH_CTL(0x21E71)
+  --- @1716 ---
+    <58> [RGU] mtk_wdt_pre_init: MTK_WDT_DEBUG_CTL(0x207F1)
+  > <59> [RGU] mtk_wdt_pre_init: MTK_WDT_DEBUG_CTL2(0xFF)
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_LATCH_CTL(0x21E71)
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_REQ_MODE(3F0032), MTK_WDT_REQ_IRQ_EN(3B0030)
+  --- @1717 ---
+    <59> [RGU] mtk_wdt_pre_init: MTK_WDT_DEBUG_CTL2(0xFF)
+  > <60> [RGU] mtk_wdt_pre_init: MTK_WDT_LATCH_CTL(0x21E71)
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_REQ_MODE(3F0032), MTK_WDT_REQ_IRQ_EN(3B0030)
+    <61> #T#WDT_PRE=21
+  --- @1718 ---
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_LATCH_CTL(0x21E71)
+  > <60> [RGU] mtk_wdt_pre_init: MTK_WDT_REQ_MODE(3F0032), MTK_WDT_REQ_IRQ_EN(3B0030)
+    <61> #T#WDT_PRE=21
+    <62> [PWRAP] First Valid Sampling Clock Found!!!
+  --- @1719 ---
+    <60> [RGU] mtk_wdt_pre_init: MTK_WDT_REQ_MODE(3F0032), MTK_WDT_REQ_IRQ_EN(3B0030)
+  > <61> #T#WDT_PRE=21
+    <62> [PWRAP] First Valid Sampling Clock Found!!!
+    <62> [PWRAP] si_en_sel = 0, si_ck_sel = 1
+  --- @1758 ---
+    <111> [PMIC]POFFSTS[0xE]=0x400
+  > <112>   bit10=1: AP WDT
+    <112> [PMIC]PG_SDN_STS0[0x16]=0xFFFF
+    <112> [PMIC]PG_SDN_STS1[0x18]=0xFC00
+  --- @1777 ---
+    <115> latch VGPU 500000 uV(0x0)
+  > <115> [pmic_check_rst] AP Watchdog
+    <115> [PMIC]just_rst = 0
+    <116> bat is exist.
+  --- @2192 ---
+    <7078> aee enable 0x3121 (0: no; 0x3121: mini; 0xFC11: full)
+  > <7079> RAM_CONSOLE detect abnormal boot wdt_status:0x6
+    <7079> [BLDR] SSPM Start with ddr reserved mode
+    <7080> aee enable 0x3121 (0: no; 0x3121: mini; 0xFC11: full)
+  --- @2523 ---
+    <7758> [TZ_TBASE] teearg.magic: 0x434D4254
+  > <7758> [TZ_TBASE] teearg.length: 0x0
+    <7759> [TZ_TBASE] teearg.dRamBase: 0x40000000
+    <7759> [TZ_TBASE] teearg.dRamSize: 0x0
+  --- @3475 ---
+    <46> #T#GPIO=1
+  > <46> [RGU] rst from: <46> ?
+    <46> [RGU] STA from reg:       0x0
+    <47> [RGU] MODE:               0x4D
+  --- @3477 ---
+    <46> [RGU] STA from reg:       0x0
+  > <47> [RGU] MODE:               0x4D
+    <47> [RGU] STA:                0x0
+    <48> [RGU] LENGTH:             0xFFE0
+  --- @11576 ---
+    <40> #T#GPIO=1
+  > <40> [RGU] rst from: <41> kernel
+    <41> [RGU] STA from reg:       0x40000000
+    <41> [RGU] MODE:               0x125
+  --- @11578 ---
+    <41> [RGU] STA from reg:       0x40000000
+  > <41> [RGU] MODE:               0x125
+    <42> [RGU] STA:                0x40000000
+    <42> [RGU] LENGTH:             0xFFE0
+  ...(truncated)
+
+(records = distinct "[NNNN] [FAC]" counters: [1317, 1318, 1319, 1320, 1321, 3582, 3583, 3584, 3585, 3586, 3587, 3588])
+NOTE: "[FAC] read: id=29 ... Linux version" is a factory string, NOT proof a kernel ran.
