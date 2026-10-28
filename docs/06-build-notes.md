@@ -71,22 +71,28 @@ it is specifically the Bazel linux-sandbox environment that `rustc` can't run in
 
 ### Fix
 
-Disable Bazel sandboxing for this build. Applied in **two** places:
+Run **only `Rustc` actions** outside the sandbox and keep the sandbox for everything else.
+Applied in **two** places:
 
 1. `build/bazel/templates/template.bazelrc` — the source template (persists across `fx gen`):
    ```
-   build --spawn_strategy=local
+   build --strategy=Rustc=local
    ```
 2. The already-generated `out/<build-dir>/gen/build/bazel/workspace/.bazelrc` (so no regen
    needed immediately).
 
-Validated: `fx bazel build --config=host //tools/power_config:power_config` then went from
-FAIL → `Build completed successfully, 360 total actions` (all `local`).
+> **Do NOT use a blanket `build --spawn_strategy=local`.** It fixes rustc but then the
+> product-assembly step fails copying a GN board-input-bundle *directory*
+> (`obj/boards/x64/paver`) with *"the source path is neither a regular file nor a symlink
+> to a regular file"* — unsandboxed, Bazel exposes those GN outputs as symlinked
+> directories the copy tool can't handle. `--strategy=Rustc=local` is surgical: rustc
+> (the only thing the sandbox breaks here) runs local; the assembly copy keeps its sandbox.
 
-> Trade-off: loses sandbox hermeticity. Fine for a local dev/research build. A more
-> surgical variant is `build --strategy=Rustc=local` (sandbox everything except Rustc).
+Validated end-to-end: `fx build` → `exit=0`, 0 failures, produced
+`.../system_a/fuchsia.zbi` (32 MB) and `kernel.eng.zbi` (3.1 MB).
+
 > If `fx set`/`fx gen` ever regenerates the workspace rc and the template edit was lost,
-> re-apply the one line above.
+> re-apply the one `build --strategy=Rustc=local` line.
 
 ## Build artifacts (bringup.x64)
 

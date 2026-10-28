@@ -1,1 +1,52 @@
 === fx build (no-sandbox fix) started mar 27 oct 2026 18:33:06 -05 ===
+Building 50 targets using //build/bazel/platforms:host
+Building 50 targets using //build/bazel/platforms:host
+clang++: warning: argument unused during compilation: '-nostartfiles' [-Wunused-command-line-argument]
+WARNING: Build option --platforms has changed, discarding analysis cache (this can be expensive, see https://bazel.build/advanced/performance/iteration-speed).
+ERROR: /home/hen/Documentos/code/android/fuchsia/out/bringup.x64-balanced/gen/build/bazel/workspace/boards/x64/BUILD.bazel:64:28: Creating board config for @@//boards/x64:x64 failed: (Exit 1): assembly_config failed: error executing FuchsiaBoardConfiguration command (from target //boards/x64:x64) 
+  (cd /home/hen/Documentos/code/android/fuchsia/out/bringup.x64-balanced/gen/build/bazel/output_base/execroot/_main && \
+  exec env - \
+  external/fuchsia_in_tree_idk+/tools/x64/assembly_config generate board --config bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64_board_config.json --output bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64 --board-input-bundle-sets external/gn_targets+/boards/x64/_files/obj/boards/x64/x64_bibs --version '' --repo fuchsia --partitions-config bazel-out/fuchsia_sdk_x64-opt/bin/build/bazel/assembly/partitions_configurations/x64)
+# Configuration: cbf7709cd46b4dedb72ec19aa6b0cea4506eecff576c6e340221eb864314af89
+# Execution platform: //build/bazel/platforms:linux_x64
+Error: Copying all files referenced by the config into: bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64
+
+Caused by:
+    0: Copying directory: external/gn_targets+/boards/x64/_files/obj/boards/x64/paver
+    1: copying external/gn_targets+/boards/x64/_files/obj/boards/x64/paver to bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64/input_bundles/paver/
+    2: copying external/gn_targets+/boards/x64/_files/obj/boards/x64/paver to bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64/input_bundles/paver/
+    3: the source path is neither a regular file nor a symlink to a regular file
+ERROR: Build did NOT complete successfully
+
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_x64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_x64
+FAILED: [code=1] obj/bundles/assembly/platform.fuchsia_platform_x64.bazel_target_can_only_be_referenced_by_one_bazel_action obj/bundles/assembly/platform.debug_symbols.json obj/bundles/assembly/platform/platform_artifacts/platform_artifacts.json 
+../../prebuilt/third_party/python3/linux-x64/bin/python3.14 -S -W error::SyntaxWarning ../../build/bazel/scripts/bazel_ninja_delayed_actions.py --build-dir . --fuchsia-dir ../../ --command build --gn-target-label //bundles/assembly:platform --bazel-platform-label //build/bazel/platforms:fuchsia_platform_x64 --bazel-targets //bundles/assembly:platform --depfile gen/bundles/assembly/platform.d
+WARNING: Build option --platforms has changed, discarding analysis cache (this can be expensive, see https://bazel.build/advanced/performance/iteration-speed).
+ERROR: /home/hen/Documentos/code/android/fuchsia/out/bringup.x64-balanced/gen/build/bazel/workspace/boards/x64/BUILD.bazel:64:28: Creating board config for @@//boards/x64:x64 failed: (Exit 1): assembly_config failed: error executing FuchsiaBoardConfiguration command (from target //boards/x64:x64) 
+  (cd /home/hen/Documentos/code/android/fuchsia/out/bringup.x64-balanced/gen/build/bazel/output_base/execroot/_main && \
+  exec env - \
+  external/fuchsia_in_tree_idk+/tools/x64/assembly_config generate board --config bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64_board_config.json --output bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64 --board-input-bundle-sets external/gn_targets+/boards/x64/_files/obj/boards/x64/x64_bibs --version '' --repo fuchsia --partitions-config bazel-out/fuchsia_sdk_x64-opt/bin/build/bazel/assembly/partitions_configurations/x64)
+# Configuration: cbf7709cd46b4dedb72ec19aa6b0cea4506eecff576c6e340221eb864314af89
+# Execution platform: //build/bazel/platforms:linux_x64
+Error: Copying all files referenced by the config into: bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64
+
+Caused by:
+    0: Copying directory: external/gn_targets+/boards/x64/_files/obj/boards/x64/paver
+    1: copying external/gn_targets+/boards/x64/_files/obj/boards/x64/paver to bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64/input_bundles/paver/
+    2: copying external/gn_targets+/boards/x64/_files/obj/boards/x64/paver to bazel-out/fuchsia_sdk_x64-opt/bin/boards/x64/x64/input_bundles/paver/
+    3: the source path is neither a regular file nor a symlink to a regular file
+ERROR: Build did NOT complete successfully
+
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_x64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_x64
+FAILED: [code=1] obj/build/bazel/target_tests/target_tests_stamp.fuchsia_platform_x64.bazel_target_can_only_be_referenced_by_one_bazel_action obj/build/bazel/target_tests/target_tests.debug_symbols.json obj/build/bazel/target_tests/target_tests.stamp 
+../../prebuilt/third_party/python3/linux-x64/bin/python3.14 -S -W error::SyntaxWarning ../../build/bazel/scripts/bazel_ninja_delayed_actions.py --build-dir . --fuchsia-dir ../../ --command build --gn-target-label //build/bazel/target_tests:target_tests --bazel-platform-label //build/bazel/platforms:fuchsia_platform_x64 --bazel-targets //build/bazel/target_tests:target_tests_stamp --depfile gen/build/bazel/target_tests/target_tests.d
+FAILED: [code=1] obj/products/bringup/product_bundle.x64.fuchsia_sdk_x64.bazel_target_can_only_be_referenced_by_one_bazel_action obj/products/bringup/product_bundle.x64_bazel_action.debug_symbols.json obj/products/bringup/product_bundle.x64_create_system_out/assembled_system.json obj/products/bringup/product_bundle.x64/size_report.json obj/products/bringup/product_bundle.x64/product_bundle/product_bundle.json obj/products/bringup/product_bundle.x64/product_bundle/system_a/fuchsia.zbi obj/products/bringup/product_bundle.x64/product_bundle/system_a/fuchsia.vbmeta 
+../../prebuilt/third_party/python3/linux-x64/bin/python3.14 -S -W error::SyntaxWarning ../../build/bazel/scripts/bazel_ninja_delayed_actions.py --build-dir . --fuchsia-dir ../../ --command build --gn-target-label //products/bringup:product_bundle.x64_bazel_action --bazel-platform-label //build/bazel/platforms:fuchsia_sdk_x64 --bazel-targets :product_bundle.x64 --depfile gen/products/bringup/product_bundle.x64_bazel_action.d
+FAILED: [code=1] obj/products/bringup/image.x64_product_assembly.fuchsia_sdk_x64.bazel_target_can_only_be_referenced_by_one_bazel_action obj/products/bringup/product_bundle.x64_product_assembly.debug_symbols.json obj/products/bringup/product_bundle.x64_product_assembly/image_assembly.json obj/products/bringup/product_bundle.x64_product_assembly/assembly_builder_forensics.json 
+../../prebuilt/third_party/python3/linux-x64/bin/python3.14 -S -W error::SyntaxWarning ../../build/bazel/scripts/bazel_ninja_delayed_actions.py --build-dir . --fuchsia-dir ../../ --command build --gn-target-label //products/bringup:product_bundle.x64_product_assembly --bazel-platform-label //build/bazel/platforms:fuchsia_sdk_x64 --bazel-targets :image.x64_product_assembly --depfile gen/products/bringup/product_bundle.x64_product_assembly.d
+ninja: build stopped: .
+Build completed.
+Hint: run `fx build` with the option `--log LOGFILE` to generate a debug log if you are reporting a bug.
+=== fx build exit=1 mar 27 oct 2026 20:42:25 -05 ===

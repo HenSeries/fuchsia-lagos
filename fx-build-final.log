@@ -1,0 +1,17 @@
+=== fx build (Rustc=local surgical) started mar 27 oct 2026 20:43:59 -05 ===
+Generating Ninja outputs file took 162ms
+Generating JSON projects took 895ms
+Generating compile_commands took 463ms
+Generating rust-project.json took 239ms
+Done. Made 74238 targets from 4235 files in 9270ms
+Timing results for regeneration steps slower than 0.500 seconds:
+9.529s   gn gen
+2.904s   bazel_warm_up
+Building 50 targets using //build/bazel/platforms:host
+Building 50 targets using //build/bazel/platforms:host
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_x64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_x64
+Building 2 targets using //build/bazel/platforms:fuchsia_platform_x64
+Building 2 targets using //build/bazel/platforms:fuchsia_sdk_x64
+Build completed.
+=== fx build exit=0 mar 27 oct 2026 20:45:00 -05 ===
