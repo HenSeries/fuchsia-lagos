@@ -100,7 +100,11 @@ TOPRGU disable (attempt 4) stays — it's harmless and protects the shim/physboo
 | **fast** loop (a few seconds) | our code ran and the shim `abort()`ed → PSCI reset (now the shim is in play: bisect with the expdb/UART) |
 | black and **never reboots** | our code ran, the TOPRGU disable took, and Zircon is up *or* the shim hung — the long-awaited foothold; UART tells which |
 
-## Attempt 6 RESULT (2026-10-28, flashed 09:50:32) — provisional
+## Attempt 6 RESULT (2026-10-28, flashed 09:50:32) — CONFIRMED
+
+**129 s after the handoff (09:50:41 → 09:52:50) the device was still quiet with no
+preloader reappearance** — more than six times the 21 s watchdog preset. The result below
+stands; the "provisional" caveats about margin no longer apply.
 
 Flashed via fastboot (device was up in TrebleDroid), rebooted, USB observer running:
 
