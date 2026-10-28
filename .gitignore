@@ -13,3 +13,6 @@ device-tree/work/
 /out/
 *.zbi
 *.vboot
+
+# build logs (noise)
+*.log
