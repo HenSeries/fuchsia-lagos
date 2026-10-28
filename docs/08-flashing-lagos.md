@@ -84,11 +84,15 @@ fastboot set_active a
 
 ## Physical UART on the G06 — research findings (2026-10-28)
 
-**Which UART to target — confirmed.** The stock DTB's `/chosen` has
+**Which UART to target — confirmed twice.** The stock DTB's `/chosen` has
 `console=tty0 ... 8250.nr_uarts=2`: Motorola's production kernel logs to the **screen
 (tty0), not a serial port**, but the two AP UARTs exist and the 8250 driver enumerates
 them — `apuart0 @ 0x11002000` and `apuart1 @ 0x11003000`. On MediaTek, **UART0 is the AP
-debug console**, so our DTB/`dw8250` targeting `0x11002000` is correct. Our shim writes
+debug console**, so our DTB/`dw8250` targeting `0x11002000` is correct. Independent
+confirmation: `mtkclient`'s preloader handshake on lagos reports
+`Preloader - Uart: 0x11002000` — so the **MediaTek preloader itself drives UART0 at that
+address from the earliest boot stage**, i.e. the UART is muxed and live before our shim
+runs. A reachable TX pad there shows the preloader *and* Zircon. Our shim writes
 there in polled mode regardless of Motorola's `tty0` choice, so **if that TX pin is wired
 out, Zircon's boot log appears even though stock Android never used it.** (If nothing shows,
 try `0x11003000` as a fallback.)
