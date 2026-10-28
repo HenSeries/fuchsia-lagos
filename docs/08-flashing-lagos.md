@@ -74,6 +74,31 @@ fastboot set_active a
 `set_active a` is the one-command undo. Full stock restore is always available from
 `moto-g06-mod/tools/RETBR_...CFC.zip` and `moto-g06-mod/backup/`.
 
+### Flashing while the device is bootlooping (no fastboot reachable)
+
+`fastboot` only appears if LK stops at its menu, which a tight bootloop never gives you.
+Use the MediaTek preloader instead — it shows up (`0e8d:2000`) on every cycle and
+**antumbra latches it**, so you can write the *next* image straight over the loop without
+restoring Android in between:
+
+```bash
+cd moto-g06-mod/tools/tanuki-lagos/bin
+sudo ./antumbra -v --disable-exploits carbonara download \
+    --da lagos.bin boot_a /path/to/lagos-fuchsia-boot.img --pl preloader_lagos.bin
+```
+
+> **`download` does NOT reboot the device.** It leaves it parked in preloader/DA mode:
+> `0e8d:2000` stays on the bus with no cycling, no adb, no fastboot, and no antumbra
+> process. That is *not* a hang — it's waiting. Boot the new image with:
+>
+> ```bash
+> sudo ./antumbra reboot --da lagos.bin --pl preloader_lagos.bin normal
+> ```
+>
+> (or a long power-press). A USB observer running across an antumbra session shows a
+> single transition into PRELOADER that then persists — that's the latch, not a boot
+> result. The boot result only exists after the reboot.
+
 ## What you can / can't see without UART
 
 - **Can see:** whether slot B bootloops, hangs on the Motorola logo, or the bootloader
