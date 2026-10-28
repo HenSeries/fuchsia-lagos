@@ -14,6 +14,13 @@
 	 * The shim/Zircon run with the null console until the ctor is proven to
 	 * complete (YELLOW); the UART comes back as its own bisect step. docs/12. */
 	chosen {
+		/* Attempt 18: the kernel log is drawn on screen by a framebuffer console
+		 * (zircon/kernel/platform/debug.cc). bypass-debuglog makes every printf
+		 * go straight to the console path synchronously (with the null UART the
+		 * debuglog dumper thread is never started); halt-on-panic keeps a panic
+		 * message on screen instead of rebooting via PSCI. debug_uart_poll (attempt
+		 * 19): the kernel drives the dw8250 UART by polling, no IRQ handler. docs/15. */
+		bootargs = "kernel.bypass-debuglog=true kernel.halt-on-panic=true kernel.debug_uart_poll=true";
 	};
 
 	cpus {
@@ -88,6 +95,7 @@
 	uart0: serial@11002000 {
 		compatible = "mediatek,mt6577-uart";
 		reg = <0x0 0x11002000 0x0 0x1000>;
+		interrupts = <0 0x70 4>;    /* stock: SPI 0x70, IRQ_TYPE_LEVEL_HIGH (attempt 19) */
 		reg-shift = <2>;
 		reg-io-width = <4>;
 		clock-frequency = <26000000>;

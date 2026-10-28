@@ -47,3 +47,45 @@ framebuffer.
 
 A **photo of the whole screen** after it stops changing. The text near the red bar is what
 we need; a panic will show `ZIRCON KERNEL PANIC` and a backtrace.
+
+## Attempt 18 RESULT (verified flash 11:48:07): **the console works, and shows the panic**
+
+![attempt 18: boot log on the phone](img/attempt18-console-boot.jpg)
+![attempt 18: kernel panic on the phone](img/attempt18-console-panic.jpg)
+
+The halt-on-panic option kept the message on screen, and USB stayed quiet: no more reboot
+loop. Highlights from the log:
+
+```
+Trying to start cpu 1, mpid 0x100 returned: 0     ... through cpu 7, mpid 0x700: 0
+arm64_perfmon_init_once:165: Unexpected/unsupported PMU idcode: 0x45
+No EFI available on system.
+invalid kernel.smp.maxcpus value, defaulting to 8
+...
+ZIRCON KERNEL PANIC
+UPTIME: 368ms, CPU: 0
+*** KERNEL PANIC (caller pc: 0xffffffff003b0b00, stack frame: 0xffffff000079312c0):
+*** ASSERT FAILED at (../../zircon/kernel/platform/debug.cc:631): irq_register_result == ZX_OK
+kernel_debug_level: 2
+CRASH: starting debug shell... (reason = 4)
+entering panic shell loop
+```
+
+- **All 7 secondary CPUs start** through PSCI with the corrected DynamIQ MPIDRs.
+- The panic is in `UartDriverHandoffLate` (upstream `debug.cc:631`): registering the UART
+  interrupt handler fails. Even without `stdout-path`, the shim hands the kernel the real
+  dw8250 UART at `0x11002000`; it is not the null driver. Our minimal UART node had **no
+  `interrupts` property**, so the IRQ number was invalid and
+  `register_permanent_int_handler()` failed.
+- This also means the kernel has been writing its console to the real UART all along.
+  It works fine for TX (no hangs), so a physical tap at `0x11002000` would show the log.
+
+## Attempt 19: UART interrupt + polling
+
+- `lagos-min.dts` UART node: `interrupts = <0 0x70 4>`, copied from the stock `apuart0`
+  (SPI 0x70, level-high).
+- `bootargs += kernel.debug_uart_poll=true` (note the underscores). The kernel polls the
+  UART from a timer instead of registering the IRQ. That sidesteps an untested question:
+  MediaTek routes SPI polarity through its `sysirq`/intpol block, which nothing here
+  programs.
+- DTB file `lagos-min-v5.dtb`; verified in the shim (2459-byte FDT, poll option present).
