@@ -1,0 +1,68 @@
+/dts-v1/;
+
+/ {
+	model = "Motorola Moto G06 (lagos) - Fuchsia bringup minimal";
+	compatible = "motorola,lagos", "mediatek,mt6768";
+	#address-cells = <2>;
+	#size-cells = <2>;
+	interrupt-parent = <&gic>;
+
+	chosen {
+		stdout-path = &uart0;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		/* cluster 0: Cortex-A55 */
+		cpu@0   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x000>; enable-method="psci"; };
+		cpu@1   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x001>; enable-method="psci"; };
+		cpu@2   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x002>; enable-method="psci"; };
+		cpu@3   { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x003>; enable-method="psci"; };
+		cpu@100 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x100>; enable-method="psci"; };
+		cpu@101 { device_type="cpu"; compatible="arm,cortex-a55"; reg=<0x101>; enable-method="psci"; };
+		/* cluster 1: Cortex-A75 (big) */
+		cpu@102 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x102>; enable-method="psci"; };
+		cpu@103 { device_type="cpu"; compatible="arm,cortex-a75"; reg=<0x103>; enable-method="psci"; };
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	/* ARM generic timer: PPIs 13,14,11,10 (sec-phys, non-sec-phys, virt, hyp), level-low */
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <1 13 8>, <1 14 8>, <1 11 8>, <1 10 8>;
+		clock-frequency = <13000000>;
+	};
+
+	/* 1 GB low bank (matches stock static /memory; MT6768 passes the rest dynamically) */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x3e605000>;
+	};
+
+	gic: interrupt-controller@c000000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <3>;
+		#address-cells = <2>;
+		#size-cells = <2>;
+		interrupt-controller;
+		reg = <0x0 0x0c000000 0x0 0x00040000>,   /* GICD */
+		      <0x0 0x0c040000 0x0 0x00200000>;    /* GICR */
+		interrupts = <1 9 4>;                     /* maintenance PPI */
+	};
+
+	/* console UART: MediaTek mt6577-uart == 16550 w/ 32-bit regs -> dw8250 driver */
+	uart0: serial@11002000 {
+		compatible = "mediatek,mt6577-uart";
+		reg = <0x0 0x11002000 0x0 0x1000>;
+		reg-shift = <2>;
+		reg-io-width = <4>;
+		clock-frequency = <26000000>;
+		status = "okay";
+	};
+};
