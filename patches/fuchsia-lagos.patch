@@ -183,6 +183,115 @@ index 0f622fa45ca..9860f9acce3 100644
    // Items will be appended to the zbi, and we will boot into the kernel in that zbi.
    shim_helper.Boot();
  }
+diff --git a/zircon/kernel/arch/arm64/secondary.S b/zircon/kernel/arch/arm64/secondary.S
+index ec94bb54425..f61baaa14ab 100644
+--- a/zircon/kernel/arch/arm64/secondary.S
++++ b/zircon/kernel/arch/arm64/secondary.S
+@@ -29,6 +29,46 @@ resume_context          .req x24
+ // that need boot-time fixup.
+ 
+ // void arm64_secondary_resume_start(void* resume_context);
++
++// [fuchsia-lagos] Per-core progress markers for the Moto G06 (no UART tap).
++// Paint a 14x14 square for this core into LK's framebuffer while the MMU is
++// still off (physical writes, Device memory: straight to DRAM). Row 480,
++// column core*90 + stage*16, core = MPIDR.Aff1 (MT6768 is DynamIQ). All three
++// frame slots. Clobbers x10-x17 only (x0 carries the PSCI context and must
++// survive). Colour is in w11. See fuchsia-lagos/docs/15.
++.macro LAGOS_MARK_FRAME base, pitch
++  movz x12, #((\base) & 0xffff)
++  movk x12, #(((\base) >> 16) & 0xffff), lsl #16
++  add x12, x12, x10
++  mov x13, #(\pitch)
++  mov x14, #480
++  madd x12, x14, x13, x12
++  mov x15, #14
++1:
++  mov x16, #14
++  mov x17, x12
++2:
++  str w11, [x17], #4
++  subs x16, x16, #1
++  b.ne 2b
++  add x12, x12, x13
++  subs x15, x15, #1
++  b.ne 1b
++.endm
++
++.macro LAGOS_CPU_MARK stage
++  mrs x10, mpidr_el1
++  ubfx x10, x10, #8, #8
++  mov x14, #90
++  mul x10, x10, x14
++  add x10, x10, #((\stage) * 16)
++  lsl x10, x10, #2
++  LAGOS_MARK_FRAME 0x781b0000, 2944
++  LAGOS_MARK_FRAME 0x7865c000, 2880
++  LAGOS_MARK_FRAME 0x78b08000, 2944
++  dsb sy
++.endm
++
+ .function arm64_secondary_resume_start, global
+   // Save the resume_context arg so we can later check whether this is a boot up
+   // or a resume.
+@@ -43,6 +83,22 @@ resume_context          .req x24
+   mov resume_context, xzr
+ 
+ .Lsecondary_start_common:
++  // [fuchsia-lagos] stage 0: entered from PSCI. Colour = exception level:
++  // GREEN = EL1, MAGENTA = EL2, RED = anything else.
++  mrs x10, CurrentEL
++  ubfx x10, x10, #2, #2
++  movz w11, #0xff00
++  movk w11, #0xff00, lsl #16
++  cmp x10, #1
++  b.eq 3f
++  movz w11, #0x00ff
++  movk w11, #0xffff, lsl #16
++  cmp x10, #2
++  b.eq 3f
++  movz w11, #0x0000
++  movk w11, #0xffff, lsl #16
++3:
++  LAGOS_CPU_MARK 0
+   // If we entered at a higher EL than 1, drop to EL1.
+   //
+   // Make sure to clear the stack pointer first. The call will reuse in EL1
+@@ -51,6 +107,10 @@ resume_context          .req x24
+   mov tmp, xzr
+   mov sp, tmp
+   bl ArmDropToEl1
++  // [fuchsia-lagos] stage 1 BLUE: now at EL1, MMU still off.
++  movz w11, #0x00ff
++  movk w11, #0xff00, lsl #16
++  LAGOS_CPU_MARK 1
+ 
+   // Make sure no old exception handlers are installed.
+   msr vbar_el1, xzr
+diff --git a/zircon/kernel/arch/arm64/secondary.cc b/zircon/kernel/arch/arm64/secondary.cc
+index 48b03eccacb..aee3f321fe3 100644
+--- a/zircon/kernel/arch/arm64/secondary.cc
++++ b/zircon/kernel/arch/arm64/secondary.cc
+@@ -95,7 +95,11 @@ zx_status_t arm64_free_secondary_stack(cpu_num_t cpu_num) {
+ // called from assembly.
+ extern "C" void arm64_secondary_entry();
+ 
++// [fuchsia-lagos] zircon/kernel/top/main.cc: per-core marker (stage 2..4).
++void LagosCpuMark(int stage, uint32_t bgra);
++
+ extern "C" void arm64_secondary_entry() {
++  LagosCpuMark(2, 0xFFFFFF00);  // [fuchsia-lagos] stage 2 YELLOW: C entry, MMU on
+   arm64_cpu_early_init();
+ 
+   cpu_num_t cpu = arch_curr_cpu_num();
+@@ -104,6 +108,7 @@ extern "C" void arm64_secondary_entry() {
+   lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_THREADING - 1);
+ 
+   arch_mp_init_percpu();
++  LagosCpuMark(3, 0xFFFFFFFF);  // [fuchsia-lagos] stage 3 WHITE: per-cpu GIC/IRQ init done
+ 
+   const bool full_dump = arm64_feature_current_is_first_in_cluster();
+   arm64_feature_debug(full_dump);
 diff --git a/zircon/kernel/dev/init.cc b/zircon/kernel/dev/init.cc
 index 071e7934fac..2e8903f65a5 100644
 --- a/zircon/kernel/dev/init.cc
@@ -612,10 +721,10 @@ index 25c6e727f56..01038c71db5 100644
    if (arch_handoff.motmot_power_driver) {
      motmot_power_init_early();
 diff --git a/zircon/kernel/top/main.cc b/zircon/kernel/top/main.cc
-index fdd8b1b7e58..5442a1e27f7 100644
+index fdd8b1b7e58..38da384342c 100644
 --- a/zircon/kernel/top/main.cc
 +++ b/zircon/kernel/top/main.cc
-@@ -30,6 +30,7 @@
+@@ -30,9 +30,11 @@
  #include <zircon/tls.h>
  
  #include <arch/current_thread.h>
@@ -623,7 +732,11 @@ index fdd8b1b7e58..5442a1e27f7 100644
  #include <dev/init.h>
  #include <kernel/cpu.h>
  #include <kernel/init.h>
-@@ -41,6 +42,7 @@
++#include <kernel/mp.h>
+ #include <kernel/mutex.h>
+ #include <kernel/thread.h>
+ #include <kernel/topology.h>
+@@ -41,6 +43,7 @@
  #include <phys/handoff/handoff.h>
  #include <phys/handoff/zircon-abi-spec.h>
  #include <vm/init.h>
@@ -631,7 +744,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  #include <vm/vm.h>
  
  namespace {
-@@ -59,6 +61,76 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
+@@ -59,6 +62,92 @@ bool cxxabi_dynamic_init::internal::ConstructorsCalled() { return gConstructorsC
  
  static uint secondary_idle_thread_count;
  
@@ -693,8 +806,14 @@ index fdd8b1b7e58..5442a1e27f7 100644
 +// Heartbeat: the right-hand strip alternates white/black every 500 ms. It only
 +// blinks if the scheduler, the arch timer and GIC interrupts all work.
 +int LagosHeartbeat(void*) {
++  uint32_t ticks = 0;
 +  for (bool on = true;; on = !on) {
 +    LagosFillRect(0, 480, 688, 720, on ? 0xFFFFFFFF : 0xFF000000);
++    if (++ticks % 20 == 0) {
++      // Every 10 s: proves timer interrupts + scheduler on the text console too.
++      printf("lagos: heartbeat %u s, online cpus mask %#x\n", ticks / 2,
++             static_cast<unsigned>(mp_get_online_mask()));
++    }
 +    Thread::Current::SleepRelative(ZX_MSEC(500));
 +  }
 +  return 0;
@@ -703,12 +822,22 @@ index fdd8b1b7e58..5442a1e27f7 100644
 +
 +// [fuchsia-lagos] Callable from other kernel files (driver handoff bisect).
 +void LagosKernelStep(int k) { LagosStep(k); }
++
++// [fuchsia-lagos] Per-core marker: a 14x14 square at row 480, column
++// core*90 + stage*16 (core = MPIDR.Aff1). Stages 0-1 are painted from
++// arch/arm64/secondary.S with the MMU off; 2-4 from C.
++void LagosCpuMark(int stage, uint32_t bgra) {
++  uint64_t mpidr;
++  __asm__ volatile("mrs %0, mpidr_el1" : "=r"(mpidr));
++  const uint32_t col0 = static_cast<uint32_t>((mpidr >> 8) & 0xff) * 90 + stage * 16;
++  LagosFillRect(480, 494, col0, col0 + 14, bgra);
++}
 +#endif
 +
  static int bootstrap2(void* arg);
  
  KCOUNTER(timeline_physboot_handoff, "boot.timeline.physboot-handoff")
-@@ -87,6 +159,23 @@ void lk_main(PhysHandoff* handoff) {
+@@ -87,6 +176,23 @@ void lk_main(PhysHandoff* handoff) {
    // After PostHandoffBootstrap(), gPhysHandoff should now be set.
    ZX_DEBUG_ASSERT(gPhysHandoff != nullptr);
  
@@ -732,7 +861,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
    // Care is taken to do this top-level in lk_main() and after
    // PostHandoffBootstrap(). This needs to be top-level as the updating of the
    // stack guard needs to happen in a function that does not return (e.g.,
-@@ -123,6 +212,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -123,6 +229,9 @@ void lk_main(PhysHandoff* handoff) {
  
    // deal with any static constructors
    CallConstructors();
@@ -742,7 +871,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // we can safely printf now since we have the debuglog, the current thread set
    // which holds (a per-line buffer), and global ctors finished (some of the
-@@ -137,15 +229,33 @@ void lk_main(PhysHandoff* handoff) {
+@@ -137,15 +246,33 @@ void lk_main(PhysHandoff* handoff) {
    // constructors (if needed) have been run.
  
    lk_primary_cpu_init_level(LK_INIT_LEVEL_EARLIEST, LK_INIT_LEVEL_ARCH_EARLY - 1);
@@ -776,7 +905,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // At this point, the kernel command line and serial are set up.
  
-@@ -159,29 +269,47 @@ void lk_main(PhysHandoff* handoff) {
+@@ -159,29 +286,47 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing arch pre-vm\n");
    arch_prevm_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_ARCH_PREVM, LK_INIT_LEVEL_PLATFORM_PREVM - 1);
@@ -824,7 +953,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // Initialize the lockup detector, after the platform timer has been
    // configured, but before the topology subsystem has brought up other CPUs.
-@@ -197,11 +325,17 @@ void lk_main(PhysHandoff* handoff) {
+@@ -197,11 +342,17 @@ void lk_main(PhysHandoff* handoff) {
    dprintf(SPEW, "initializing system topology\n");
    topology_init();
    lk_primary_cpu_init_level(LK_INIT_LEVEL_TOPOLOGY, LK_INIT_LEVEL_KERNEL - 1);
@@ -842,7 +971,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // Mark the current CPU as being active, then create a thread to complete
    // system initialization
-@@ -212,6 +346,9 @@ void lk_main(PhysHandoff* handoff) {
+@@ -212,6 +363,9 @@ void lk_main(PhysHandoff* handoff) {
    t->SetCpuAffinity(cpu_num_to_mask(BOOT_CPU_ID));
    t->Detach();
    t->Resume();
@@ -852,7 +981,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // become the idle thread and enable interrupts to start the scheduler
    Thread::Current::BecomeIdle();
-@@ -222,6 +359,10 @@ static int bootstrap2(void*) {
+@@ -222,6 +376,10 @@ static int bootstrap2(void*) {
  
    timeline_threading.Set(current_mono_ticks());
  
@@ -863,7 +992,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
    dprintf(SPEW, "top of bootstrap2()\n");
  
    // TODO(https://fxbug.dev/322207536): Stop resetting start and finish times
-@@ -231,15 +372,39 @@ static int bootstrap2(void*) {
+@@ -231,15 +389,39 @@ static int bootstrap2(void*) {
  
    // Initialize the rest of the architecture and platform.
    lk_primary_cpu_init_level(LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_ARCH - 1);
@@ -904,7 +1033,7 @@ index fdd8b1b7e58..5442a1e27f7 100644
  
    // At this point, other cores in the system have been started (though may
    // not yet be online).  Signal that the boot CPU is ready.
-@@ -257,9 +422,17 @@ static int bootstrap2(void*) {
+@@ -257,9 +439,17 @@ static int bootstrap2(void*) {
    // Give the kernel shell an opportunity to run. If it exits this function, continue booting.
    kernel_shell_init();
  
@@ -922,6 +1051,16 @@ index fdd8b1b7e58..5442a1e27f7 100644
    dprintf(SPEW, "moving to last init level\n");
    lk_primary_cpu_init_level(LK_INIT_LEVEL_USER, LK_INIT_LEVEL_LAST);
  
+@@ -280,6 +470,9 @@ void lk_secondary_cpu_entry() {
+ 
+   // late CPU initialization for secondary CPUs
+   arch_late_init_percpu();
++#if defined(__aarch64__)
++  LagosCpuMark(4, 0xFFFF8000);  // [fuchsia-lagos] stage 4 ORANGE: late per-cpu init done
++#endif
+ 
+   // secondary cpu initialize from threading level up. 0 to threading was handled in arch
+   lk_init_level(LK_INIT_FLAG_SECONDARY_CPUS, LK_INIT_LEVEL_THREADING, LK_INIT_LEVEL_LAST);
 diff --git a/zircon/system/ulib/uart/include/lib/uart/dw8250.h b/zircon/system/ulib/uart/include/lib/uart/dw8250.h
 index 6287b65f2cf..b2bcb6a42a2 100644
 --- a/zircon/system/ulib/uart/include/lib/uart/dw8250.h
