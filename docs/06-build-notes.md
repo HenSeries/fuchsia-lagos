@@ -69,30 +69,38 @@ namespaces are enabled (`kernel.unprivileged_userns_clone=1`, `unshare --user` w
 it is specifically the Bazel linux-sandbox environment that `rustc` can't run in. It is
 **not** OOM/concurrency: the failure is instant and deterministic even with warm caches.
 
-### Fix
+### Root cause (the real one) and fix
 
-Run **only `Rustc` actions** outside the sandbox and keep the sandbox for everything else.
-Applied in **two** places:
+The culprit is **Bazel 8.x sandbox-directory reuse** (`--reuse_sandbox_directories`, on by
+default). Reusing a sandbox dir corrupts `Rustc` actions on this host — rustc exits 1 with
+no stderr. The tell: the exact action **succeeds with `--sandbox_debug`**, and per Bazel's
+docs `--sandbox_debug` *disables sandbox reuse*. Confirmed on a fresh action (after
+`fx bazel clean`): sandbox ON + reuse OFF → `Compiling Rust bin runner ... linux-sandbox` →
+`Build completed successfully`.
+
+So the fix keeps the sandbox and only disables reuse. Applied in **two** places:
 
 1. `build/bazel/templates/template.bazelrc` — the source template (persists across `fx gen`):
    ```
-   build --strategy=Rustc=local
+   build --noreuse_sandbox_directories
    ```
-2. The already-generated `out/<build-dir>/gen/build/bazel/workspace/.bazelrc` (so no regen
-   needed immediately).
+2. The already-generated `out/<build-dir>/gen/build/bazel/workspace/.bazelrc`.
 
-> **Do NOT use a blanket `build --spawn_strategy=local`.** It fixes rustc but then the
-> product-assembly step fails copying a GN board-input-bundle *directory*
-> (`obj/boards/x64/paver`) with *"the source path is neither a regular file nor a symlink
-> to a regular file"* — unsandboxed, Bazel exposes those GN outputs as symlinked
-> directories the copy tool can't handle. `--strategy=Rustc=local` is surgical: rustc
-> (the only thing the sandbox breaks here) runs local; the assembly copy keeps its sandbox.
+> **Dead ends we ruled out** (don't repeat them):
+> - `build --spawn_strategy=local` — fixes rustc but then product assembly fails copying a
+>   GN board-input-bundle *directory* (`obj/boards/x64/paver`): *"the source path is
+>   neither a regular file nor a symlink to a regular file"*. Unsandboxed, Bazel exposes GN
+>   outputs as symlinked dirs the copy tool rejects.
+> - `build --strategy=Rustc=local` — does **not** actually reroute these actions; they still
+>   run sandboxed and fail. (An x64 build appeared to pass with it only because the rust
+>   host tools were already cached from manual runs.)
+>
+> Keeping the sandbox (reuse off) is what lets both rustc *and* the assembly copy work.
 
-Validated end-to-end: `fx build` → `exit=0`, 0 failures, produced
-`.../system_a/fuchsia.zbi` (32 MB) and `kernel.eng.zbi` (3.1 MB).
+Validated end-to-end on x64 earlier (`fuchsia.zbi` 32 MB); the arm64 build uses the same fix.
 
 > If `fx set`/`fx gen` ever regenerates the workspace rc and the template edit was lost,
-> re-apply the one `build --strategy=Rustc=local` line.
+> re-apply the one `build --noreuse_sandbox_directories` line.
 
 ## Build artifacts (bringup.x64)
 
