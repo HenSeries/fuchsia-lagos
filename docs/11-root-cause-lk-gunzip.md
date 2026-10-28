@@ -130,6 +130,20 @@ WDT reboot). With no reset, the last LK frame simply stays. So "stuck on the Mot
 never rebooting" is what *our code running without a display driver* looks like — don't
 read it as a bootloader hang by itself.
 
+### Why `expdb` can't show this boot — and why that's good news
+
+After restoring TrebleDroid we re-dumped `expdb` expecting attempt 6's LK log
+(`decompress_kernel takes N ms`, no gzip error, the jump). It isn't there. **All seven**
+kernel-handling records in the partition are byte-for-byte the attempt-4 watchdog loops
+(`kernel_sz=0x01c03e38`, `gzip header is not correct`, `0 ms`), and the TrebleDroid boots
+aren't there either. `expdb` is the *exception* database: `kedump` writes the previous
+boot's LK log only when that boot ended in a watchdog/exception reset. A clean Android
+boot leaves nothing, and attempt 6 — ended by a long power-press, which the PMIC records as
+a normal reset — leaves nothing. Had LK stalled in gunzip until the watchdog fired, there
+**would** be a new record with the gzipped kernel's size. There is none. So `expdb` can
+never show a *successful* Fuchsia boot, but its silence after attempt 6 is consistent only
+with "no watchdog reset happened".
+
 What it does *not* settle: whether Zircon is actually up or the shim/physboot hung after
 the jump (watchdog is off, so no reset either way), nor — strictly — whether LK itself
 stalled somewhere it keeps kicking the WDT. The LK log of *this* boot in `expdb` settles

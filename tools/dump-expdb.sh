@@ -29,12 +29,15 @@ import sys, re
 text = open(sys.argv[1], 'rb').read().decode('latin-1')
 L = [l.rstrip() for l in re.split(r'[\r\n]+', text)]
 
-def section(title, pat, maxhits=40, before=1, after=3, exclude=None):
+def section(title, pat, maxhits=40, before=1, after=3, exclude=None, dedupe=True):
     print(f'\n######## {title} ########')
     rx = re.compile(pat, re.I); shown = set(); n = 0
     for i, l in enumerate(L):
         if rx.search(l) and not (exclude and re.search(exclude, l, re.I)):
-            k = re.sub(r'\d', '#', l)[:90]
+            # Dedupe masks digits, which would hide e.g. kernel_sz=0x01c03e38 vs
+            # 0x01c03e48 or "takes 0 ms" vs "takes 1234 ms" — never dedupe the
+            # kernel-handling section.
+            k = re.sub(r'\d', '#', l)[:90] if dedupe else f'{i}'
             if k in shown: continue
             shown.add(k); n += 1
             print(f'  --- @{i} ---')
