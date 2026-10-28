@@ -82,9 +82,42 @@ fastboot set_active a
 - **Can't see:** Zircon's actual boot log, the "hello" from physboot, driver bind results.
   That needs the serial console.
 
-## Physical UART on the G06 — to investigate
+## Physical UART on the G06 — research findings (2026-10-28)
 
-MediaTek debug UART is usually exposed on test points on the board, sometimes multiplexed
-onto the USB-C sideband (CC/SBU) lines via a special cable/resistor combo. Finding lagos's
-specific route is the remaining hardware task. Until then, the flash is a behavior-only
-experiment.
+**Which UART to target — confirmed.** The stock DTB's `/chosen` has
+`console=tty0 ... 8250.nr_uarts=2`: Motorola's production kernel logs to the **screen
+(tty0), not a serial port**, but the two AP UARTs exist and the 8250 driver enumerates
+them — `apuart0 @ 0x11002000` and `apuart1 @ 0x11003000`. On MediaTek, **UART0 is the AP
+debug console**, so our DTB/`dw8250` targeting `0x11002000` is correct. Our shim writes
+there in polled mode regardless of Motorola's `tty0` choice, so **if that TX pin is wired
+out, Zircon's boot log appears even though stock Android never used it.** (If nothing shows,
+try `0x11003000` as a fallback.)
+
+**Two ways to physically reach it:**
+
+1. **On-board TX/RX/GND pads.** MediaTek boards route UART0 to small pads, usually near the
+   SoC under the shield. Their exact location is only in the **service schematic / boardview**
+   — the G06 `XT2535` boardview is sold by phone-repair file vendors (e.g. W2R Solutions,
+   Chimera test-point library). Open the boardview in **OpenBoardView**, find the UART0
+   TX/RX/GND pads, wire to a 3.3 V USB-TTL adapter (device TX→adapter RX, device RX→adapter
+   TX, GND→GND; do **not** connect VCC). Baud: MediaTek default is 921600 (also try 115200).
+
+2. **UART-over-USB (no disassembly, but uncertain on USB-C).** Many MediaTek phones switch
+   the USB **data lines to a 921600-baud TTL UART** when the preloader detects a special
+   "MediaTek debug cable" at boot (the switch is decided by resistance/voltage on the
+   cable). On old micro-USB devices this is well documented (D+=TX, D-=RX, ID→resistor→GND,
+   resistor value selects mode). On **USB-C it is hit-or-miss** — the UART may be on the SBU
+   pins and only activate under MTK tools; community attempts with 300k/523k/619k CC-to-GND
+   resistors have largely failed. Worth trying but not reliable.
+
+> Note: the on-screen `console=tty0` and `printk.disable_uart` settings are Android-kernel
+> choices and do **not** affect our shim, which drives `0x11002000` itself. What they can't
+> change is the **preloader's pinmux** — if MediaTek's preloader (which runs before our shim)
+> doesn't route UART0 to a reachable pad/pin on this board, there's nothing to tap. The
+> schematic/boardview is the way to settle that.
+
+**BROM test point (different thing):** the widely-shared G06 "test point" (KCOL0/KPCOL0 +
+GND) forces MediaTek BROM/preloader mode for `mtkclient` flashing — it is **not** a UART
+console. Useful for recovery, not for reading Zircon.
+
+Until a UART tap is wired, the flash is a behavior-only experiment.
