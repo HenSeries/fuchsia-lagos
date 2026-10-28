@@ -102,9 +102,10 @@ TOPRGU disable (attempt 4) stays — it's harmless and protects the shim/physboo
 
 ## Attempt 6 RESULT (2026-10-28, flashed 09:50:32) — CONFIRMED
 
-**129 s after the handoff (09:50:41 → 09:52:50) the device was still quiet with no
-preloader reappearance** — more than six times the 21 s watchdog preset. The result below
-stands; the "provisional" caveats about margin no longer apply.
+**Full 4-minute observer window (242 s): 3 transitions, all in the first 9 s
+(quiet → PRELOADER → quiet), then quiet for the rest; zero preloader reappearances; no
+adb / Android USB.** The 21 s watchdog never fired. The result below stands; the
+"provisional" caveats about margin no longer apply.
 
 Flashed via fastboot (device was up in TrebleDroid), rebooted, USB observer running:
 
