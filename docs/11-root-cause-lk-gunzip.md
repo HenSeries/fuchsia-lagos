@@ -99,3 +99,27 @@ TOPRGU disable (attempt 4) stays — it's harmless and protects the shim/physboo
 | still loops at ~21 s | our code *still* isn't running → the gzip theory is incomplete (check LK's log again) |
 | **fast** loop (a few seconds) | our code ran and the shim `abort()`ed → PSCI reset (now the shim is in play: bisect with the expdb/UART) |
 | black and **never reboots** | our code ran, the TOPRGU disable took, and Zircon is up *or* the shim hung — the long-awaited foothold; UART tells which |
+
+## Attempt 6 RESULT (2026-10-28, flashed 09:50:32) — provisional
+
+Flashed via fastboot (device was up in TrebleDroid), rebooted, USB observer running:
+
+```
+[09:50:32] -> quiet        fastboot gone, rebooting
+[09:50:35] -> PRELOADER    normal pass through the preloader
+[09:50:41] -> quiet        LK handed off to the kernel
+  …no further transition through 09:51:07 (26 s of quiet)
+```
+
+**Every previous attempt showed the preloader again at ~20 s** (`#T#WDT_PRE=21`). Here it
+did not. 26 s > 21 s means the TOPRGU watchdog **did not fire** — which can only happen if
+LK gunzipped our kernel, jumped into it, and our first-instruction watchdog disable
+executed. **This is the first time our code has ever run on lagos.** The gunzip root cause
+is confirmed.
+
+What it does *not* settle: whether Zircon is actually up (black — no display driver) or
+the shim/physboot hung after the jump (also black — watchdog is off, so no reset). Those
+are indistinguishable without the serial console. Final 4-minute observer window and the
+on-screen behaviour pending at the time of writing; the LK log for *this* boot can be
+read from `expdb` after restoring TrebleDroid (expect `decompress_kernel takes N ms` with
+no gzip error, then the jump — LK's log ends there, so it can't show Zircon's state).
