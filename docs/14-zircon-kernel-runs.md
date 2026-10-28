@@ -75,7 +75,12 @@ plus the last colour identifies the step.
 
 Bottom strip (rows 1440–1640) blinks white/black every 500 ms once step 18 is reached.
 
-## Attempt 14 RESULT (verified flash 11:09:35): **5 bands**, rest of the screen gray
+## Attempt 14 RESULT (verified flash 11:09:35): "5 bands", rest of the screen gray
+
+> **Re-read after attempt 15:** the user listed the colours as green, blue, yellow, red, then
+> gray. That is **4** bands (steps 1–4) plus the gray background; step 5 would have been
+> cyan. The analysis below (hang in `DriverHandoffEarly`) was one step too late. See
+> attempt 15's result.
 
 Steps 1–5 ran: constructors, the EARLIEST and ARCH_EARLY init levels, `arch_early_init`
 and **`platform_early_init`**. Step 6 (after `DriverHandoffEarly`) never painted. USB stayed
@@ -108,3 +113,43 @@ rows on a 56-row stride so 25 steps fit above the heartbeat strip.
 
 Colour cycle unchanged: green, blue, yellow, red, cyan, magenta, white, orange. Verified in
 the binary: the inlined paints start at rows 280, 336, 392, 448, 504 (steps 6–10).
+
+## Attempt 15 RESULT (verified flash 11:18:49): green, blue, yellow, red, then gray
+
+Same as attempt 14, and now the colours are explicit: **4 bands**. Step 5 (cyan, after
+`platform_early_init`) never painted. The hang is inside `platform_early_init`, which on
+generic-arm does: persistent RAM (none), `pmm_checker_init_from_cmdline()`,
+`ASSERT(pmm_init(memory) == ZX_OK)`, `arm64_mmu_early_init()`.
+
+### Root cause: our own framebuffer reservation starved a PMM arena
+
+Attempt 13 made physboot retype the **whole** framebuffer bank `[0x781b0000, +0x1050000)` as
+`kTestRamReserve`. The gap below that bank (~725 MB) is far beyond what the PMM will bridge,
+so the bank is its own arena. Every arena needs free RAM **inside itself** for its page
+bookkeeping (48 bytes per page, about 200 KiB for this bank). With the whole bank
+reserved there was none, so `SelectPmmArenas()` reported `kNoBookkeepingSpace` for an
+*allocated* range, and `PmmNode::Init` fails hard:
+
+```
+// If we fail to include a pre-PMM allocation in an arena that could be
+// disastrous in unpredictable/hard-to-debug ways, so fail hard early.
+ZX_ASSERT(!allocation_excluded);
+```
+
+PSCI isn't initialized yet and there's no console, so the panic just spins. GRAY with four bands.
+
+Attempt 12 (GRAY, before the reservation existed) had no bands, so it could not tell us
+where it stopped; it may have hung somewhere else entirely. Attempt 16 will show.
+
+## Attempt 16: reserve only the painted frames
+
+Physboot now reserves `[0x781b0000, +0xE04000)`, exactly the three frames we paint. The free
+`0x24C000` tail (2.3 MB) holds the arena's bookkeeping. Verified in the binary: physboot no
+longer references `0x1050000`. The step legend is unchanged from attempt 15:
+
+| bands | stuck in / reached |
+|---|---|
+| 4 (green, blue, yellow, red) | `platform_early_init` again → the PMM is still unhappy |
+| 5–10 | `DriverHandoffEarly`: 5 → UART handoff, 6 → GIC, 7–8 → timer, 9 → PSCI |
+| 11–21 | rest of `lk_main` (VM, heap, topology, `kernel_init`) |
+| 22+ | `bootstrap2` running; 23 + **blinking bottom strip** = timers + interrupts work; 25 = userspace |
