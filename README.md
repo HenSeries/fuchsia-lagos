@@ -207,6 +207,139 @@ Once the phone boots, it connects over USB as CDC-Ethernet:
 
 ---
 
+## Post-Quickstart: Workflow & Development Indications
+
+Once you have verified the basic build, flash, and remote shell flow, follow these procedures to inspect the system, develop new drivers, diagnose crashes, and keep the source repositories synchronized.
+
+### 1. System Inspection & Health Verification
+
+Use [`tools/lagos-sh`](tools/lagos-sh) to interact with the running Fuchsia instance over USB:
+
+```bash
+# Verify process tree and running tasks (component_manager, driver_manager, netsvc)
+./tools/lagos-sh "ps"
+
+# Monitor real-time memory and CPU utilization
+./tools/lagos-sh "top -n 1"
+
+# Inspect published device nodes in /dev/class
+./tools/lagos-sh "ls /dev/class"
+
+# Inspect driver topology and composite node matching
+./tools/lagos-sh "driver dump"
+
+# Stream live system logs (Zircon kernel + userspace syslog)
+./tools/lagos-sh --log
+```
+
+---
+
+### 2. The Driver Development Lifecycle (Adding New Peripherals)
+
+Every peripheral driver (such as `mt-musb` or `mtk-sdmmc`) follows this 4-step integration process:
+
+#### Step A: Devicetree Definition
+1. Inspect the stock decompiled devicetree [`device-tree/dts/vendor_boot-fdt0.dts`](device-tree/dts/vendor_boot-fdt0.dts) to find the peripheral's base MMIO addresses, register window sizes, and GIC interrupts.
+2. Add the peripheral node to [`device-tree/lagos/lagos-min.dts`](device-tree/lagos/lagos-min.dts) (e.g. `usb@11200000`, `mmc0@11230000`).
+3. Compile the DTS into a binary DTB:
+   ```bash
+   dtc -I dts -O dtb -o device-tree/lagos/lagos-min.dtb device-tree/lagos/lagos-min.dts
+   ```
+4. **Important (Cache Invalidation):** Because Ninja/Bazel do not detect changes inside assembly `.incbin` statements, bump the revision suffix whenever updating the DTB:
+   ```bash
+   # Example: copy to next revision
+   cp device-tree/lagos/lagos-min.dtb ../fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v10.dtb
+   ```
+   Then update line 68 in `../fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc` to match the new file name.
+
+#### Step B: Authoring the DFv2 Driver
+Under `../fuchsia/src/devices/<subsystem>/drivers/<driver_name>/`:
+1. **DML specification (`meta/<driver>.dml`):**
+   Fuchsia's devicetree manager publishes every DTB node as a composite node spec. Declare the driver as a composite driver requiring a primary `"pdev"` parent with `compat: "<vendor>,<compatible-string>"`.
+2. **Component Manifest (`meta/<driver>.cml`) & Bind Rules (`meta/<driver>.bind`):**
+   Define component runner, binary path, and exposed driver services (e.g., `fuchsia.hardware.sdmmc.SdmmcService`).
+3. **Driver Package (`BUILD.gn`):**
+   Configure `fuchsia_driver_dml`, `driver_bind_rules`, and `fuchsia_cc_driver`.
+4. **C++ Implementation (`<driver>.h` / `<driver>.cc`):**
+   Extend `fdf::DriverBase2` and the subsystem protocol server (e.g. `fdf::WireServer<fuchsia_hardware_sdmmc::Sdmmc>`). Connect to `pdev`, map MMIOs via `client.MapMmio()`, and serve the FIDL service on a child node.
+
+#### Step C: Board Bundle Registration
+Register the driver so it is packaged into the bootfs image:
+1. In `../fuchsia/boards/arm64/BUILD.gn`, add the driver package target to `main_bundle.drivers`:
+   ```gn
+   {
+     package_target = "//src/devices/<subsystem>/drivers/<driver_name>:package"
+     package_set = "bootfs"
+     driver_components = [ "meta/<driver_name>.cm" ]
+   },
+   ```
+2. In `../fuchsia/build/drivers/all_drivers_list.txt`, add the driver target:
+   ```
+   //src/devices/<subsystem>/drivers/<driver_name>:<driver_name>-driver
+   ```
+
+#### Step D: Build, Deploy & Verify
+```bash
+# 1. Rebuild Fuchsia
+cd ../fuchsia && fx build
+
+# 2. Package boot image and flash slot B
+cd ../fuchsia-lagos
+./tools/build-boot-img.sh
+./tools/flash-lagos-fuchsia.sh
+
+# 3. Verify driver binding in remote shell
+./tools/lagos-sh "driver dump" | grep <driver_name>
+```
+
+---
+
+### 3. Triage & Crash Recovery (When Boot Fails)
+
+If a change causes the kernel to panic or hang:
+
+1. **Immediate Safe Recovery:**
+   Bootloader slot A is kept pristine with TrebleDroid / Android. Switch back immediately via fastboot:
+   ```bash
+   fastboot set_active a && fastboot reboot
+   ```
+2. **Extracting Panic Dumps (`dump-expdb.sh`):**
+   MediaTek's bootloader stores the panic records, registers, and kernel handling logs of recent boots in the `expdb` partition. Once booted into Android (with root):
+   ```bash
+   ./tools/dump-expdb.sh
+   ```
+   This will parse the crash logs, revealing whether the bootloader panicked, if LittleKernel failed decompression, or if the hardware watchdog fired.
+
+---
+
+### 4. Repository Synchronization & Versioning
+
+The project is maintained across two interconnected git repositories:
+
+* **`fuchsia-lagos` (`/home/hen/Documentos/code/android/fuchsia-lagos`):**
+  Houses the device trees, host tools, flashing scripts, reference documents, and architecture documentation.
+* **`fuchsia` (`/home/hen/Documentos/code/android/fuchsia`):**
+  The modified Fuchsia source tree with our custom drivers and kernel patches on branch `lagos`.
+
+When committing changes:
+```bash
+# In the Fuchsia source fork:
+cd ../fuchsia
+git add -A
+git commit -m "Your descriptive commit message"
+
+# In fuchsia-lagos:
+cd ../fuchsia-lagos
+# 1. Update the portable patch against base commit
+cd ../fuchsia && git diff cdb2ac2b653 > ../fuchsia-lagos/patches/fuchsia-lagos.patch
+cd ../fuchsia-lagos
+# 2. Document changes in docs/XX-<topic>.md and README.md
+git add -A
+git commit -m "docs/patch: update with latest changes"
+```
+
+---
+
 ## Documentation Index
 
 Detailed engineering logs and findings for every phase of the project:
