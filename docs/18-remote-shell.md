@@ -72,3 +72,31 @@ How it works:
 **Limits:** each command is a separate `sh -c`, so `cd` and variables don't
 carry over. There's no stdin, so interactive programs won't work. Output
 travels over UDP debuglog packets, so a very large dump can drop lines.
+
+## Attempt 29 result: `ps` works
+
+[Full output](../logs/attempt29-remote-shell-ps.txt). `tools/lagos-sh ps` prints the whole
+job/process tree of the running phone:
+
+```
+TASK              PSS PRIVATE  SHARED   STATE NAME
+j: 1051        176.1M  160.2M                 root
+  p: 1201       10.7M   10.3M   5280K         bin/component_manager
+      p: 2391  139.1M  138.3M   4324K         sysmem.cm
+      p: 2420 2508.2K   1056K   8536K         archivist.cm
+      p: 3071 2228.1K   1192K   4940K         driver_manager.cm
+      p: 3965  721.5K    368K   3404K         netsvc.cm
+      p: 9203  893.5K    400K   5716K         net:sh          <- the remote shell
+      p: 9330  400.9K    236K   2804K         /boot/bin/ps
+      p: 7594 3742.5K   1728K   10.2M         mt-musb.cm (+2 more)   <- USB driver host
+      ...
+```
+
+What still doesn't work, and why:
+
+| command | result | cause |
+|---|---|---|
+| `kstats` | `Cannot obtain info resource` | needs `fuchsia.kernel.InfoResource` (not offered to netsvc yet) |
+| `threads` | `libinspector.so` NOT_FOUND, crash | the netsvc-spawned shell's loader can't find that lib |
+| `memgraph \| dd` | crash | `dd` can't read stdin, so the pipe broke; run `memgraph` alone |
+| `lsusb` | NOT_FOUND | lists `/dev/class/usb-device` (USB *host* side) |

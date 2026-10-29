@@ -1,0 +1,231 @@
+=== flasheador (intento 29, 60 min) ===
+fastboot up 22:08:29
+Sending 'boot_a' (28488 KB)                        OKAY [  0.716s]
+Writing 'boot_a'                                   OKAY [  0.535s]
+Finished. Total time: 1.258s
+Rebooting                                          OKAY [  0.000s]
+Finished. Total time: 0.050s
+rebooted at 22:08:30
+netsvc up at 22:08:53
+### lagos-sh 'ps'
+TASK              PSS PRIVATE  SHARED   STATE NAME
+j: 1051        176.1M  160.2M                 root
+  p: 1201       10.7M   10.3M   5280K         bin/component_manager
+  j: 1919      163.7M  149.2M                 
+    j: 1925    847.5K    400K                 
+      p: 1965  847.5K    400K   5408K         console.cm
+    j: 2072    891.5K    400K                 
+      p: 2092  891.5K    400K   5496K         kernel-args-forwarder.cm
+    j: 2286    986.2K    368K                 
+      p: 2361  986.2K    368K   4108K         critical-services.cm
+    j: 2331    139.1M  138.3M                 
+      p: 2391  139.1M  138.3M   4324K         sysmem.cm
+    j: 2381   2508.2K   1056K                 
+      p: 2420 2508.2K   1056K   8536K         archivist.cm
+    j: 3054   2228.1K   1192K                 
+      p: 3071 2228.1K   1192K   4940K         driver_manager.cm
+    j: 3469    986.2K    476K                 
+      p: 3498  986.2K    476K   3716K         role_manager.cm
+    j: 3911   2015.9K   1004K                 
+      p: 3965  721.5K    368K   3404K         netsvc.cm
+      p: 9203  893.5K    400K   5716K         net:sh
+      p: 9330  400.9K    236K   2804K         /boot/bin/ps
+    j: 3991   3308.6K   1576K                 
+      p: 4102 3308.6K   1576K   10.0M         driver-host-root
+    j: 4114    885.0K    584K                 
+      p: 4196  885.0K    584K   3128K         console-launcher.cm
+    j: 5212    556.2K    304K                 
+      p: 5305  556.2K    304K   3200K         device-name-provider.cm
+    j: 5388   1948.7K    580K                 
+      p: 5586 1948.7K    580K   8360K         fshost.cm
+    j: 5573   1966.0K    556K                 
+      p: 5653 1966.0K    556K   8480K         virtual-console.cm
+    j: 5642    857.0K    304K                 
+      p: 5693  857.0K    304K   3040K         memfs.cm
+    j: 7577   3742.5K   1728K                 
+      p: 7594 3742.5K   1728K   10.2M         mt-musb.cm (+2 more)
+    j: 7851   1558.5K    612K                 
+      p: 7882 1558.5K    612K   8312K         pl031-rtc.cm
+  j: 2851          0B      0B                 
+  j: 2891          0B      0B                 
+  j: 2989          0B      0B                 
+  j: 5031     1659.2K    672K                 zircon-shell
+    p: 5120    861.5K    368K   5716K         sh:console
+    p: 5131    797.7K    304K   5720K         sh:console
+TASK              PSS PRIVATE  SHARED   STATE NAME
+### lagos-sh 'kstats -c 1 2>&1'
+(exit -25)
+ERROR: Cannot obtain info resource: ZX_ERR_PEER_CLOSED (-24)
+
+### lagos-sh 'memgraph 2>&1 | dd bs=1 count=600 2>/dev/null'
+Reading from stdin isn't supported.
+Usage: dd [OPTIONS]
+dd can be used to convert and copy files
+ bs=BYTES  : read and write BYTES bytes at a time
+ count=N   : copy only N input blocks
+ ibs=BYTES : read BYTES bytes at a time (default: 512)
+ if=FILE   : read from FILE instead of stdin
+ obs=BYTES : write BYTES bytes at a time (default: 512)
+ of=FILE   : write to FILE instead of stdout
+ seek=N    : skip N obs-sized blocks at start of output
+ skip=N    : skip N ibs-sized blocks at start of input
+ conv=sync : pad input to input block size
+ N and BYTES may be followed by the following multiplicitive
+ suffixes: c = 1, w = 2, b = 512, kB = 1000, K = 1024,
+           MB = 1000 * 1000, M = 1024 * 1024, xM = M,
+           GB = 1000 * 1000 * 1000, G = 1024 * 1024 * 1024
+ --help : Show this help message
+crashsvc: exception received for process "/boot/bin/memgraph", processing
+{{{reset:begin}}}
+<== CRASH: process /boot/bin/memgraph[9833] thread initial-thread[9835]
+<== sw breakpoint, PC at 0x80c7c696596c
+ x0          0xffffffff x1        0x337168acf8 x2      0x80c7c69c4bf0 x3                   0
+ x4                 0x2 x5       0x2a0f4ba3926 x6                0x22 x7                0x20
+ x8      0x80c7c68fa0c9 x9                0x25 x10      0x2a0f4ba39c8 x11                  0
+ x12      0x2a0f4ba3a1c x13                0x1 x14      0x16c48573ff8 x15                0x1
+ x16      0x16c48591b70 x17     0x80c7c6965964 x18      0x2ff5c4f8048 x19      0x16c48567569
+ x20     0x80c7c69b6030 x21       0xa16fabf4c0 x22                0x1 x23      0x2a0f4ba3e08
+ x24               0x40 x25      0x2a0f4ba3e30 x26               0x30 x27     0x80c7c69b6018
+ x28       0xa16fabf4c0 x29      0x2a0f4ba3f50 lr       0x16c4858be8c sp       0x2a0f4ba3a70
+ pc      0x80c7c696596c psr         0x80000000 far                  0 esr         0xf2000001
+bottom of user stack:
+0x000002a0f4ba3a70: 00000000 00000000 00000000 00000000 |................|
+0x000002a0f4ba3a80: 00000000 00000000 00000000 00000000 |................|
+0x000002a0f4ba3a90: 542025fc 0000031d 54202614 0000031d |.% T.....& T....|
+0x000002a0f4ba3aa0: 00000000 00000000 00000000 00000000 |................|
+0x000002a0f4ba3ab0: 00000000 00000000 00000800 00000000 |................|
+0x000002a0f4ba3ac0: 00000000 00000000 00000000 00000000 |................|
+0x000002a0f4ba3ad0: 00000000 00000000 00000000 00000000 |................|
+0x000002a0f4ba3ae0: 80200802 80200802 80200802 80200802 |.. ... ... ... .|
+0x000002a0f4ba3af0: 4858c394 0000016c 48566fdb 0000016c |..XHl....oVHl...|
+0x000002a0f4ba3b00: 4167d420 00000033 1167dcd8 00000032 | .gA3.....g.2...|
+0x000002a0f4ba3b10: 4858c6bc 0000016c 00000000 00000000 |..XHl...........|
+0x000002a0f4ba3b20: 4858d944 0000016c 655f6d65 726f7272 |D.XHl...em_error|
+0x000002a0f4ba3b30: f4ba3b90 000002a0 f4ba3b30 000002a0 |.;......0;......|
+0x000002a0f4ba3b40: f4ba3af0 000002a0 ffffffc8 ffffff80 |.:..............|
+0x000002a0f4ba3b50: f4ba3b90 000002a0 f4ba3b30 000002a0 |.;......0;......|
+0x000002a0f4ba3b60: f4ba3af0 000002a0 ffffffc8 ffffff80 |.:..............|
+memory dump near pc:
+0x000080c7c696594c: f6 57 43 a9 f8 5f 42 a9 fa 67 41 a9 fd 7b c5 a8 |.WC.._B..gA..{..
+0x000080c7c696595c: 5e 8e 5f f8 c0 03 5f d6 1f 20 03 d5 08 3b ca 30 |^._..._.. ...;.0
+0x000080c7c696596c: 20 00 20 d4 5e 86 00 f8 ff c3 01 d1 fd 7b 04 a9 | . .^........{..
+0x000080c7c696597c: f5 2b 00 f9 f4 4f 06 a9 fd 03 01 91 f3 03 02 aa |.+...O..........
+memory dump near thread pointer:
+0x000000a16fabf4a0: 00000000 00000000 00000000 00000000 |................|
+0x000000a16fabf4b0: 4a724c07 00349b26 00000000 00000000 |.LrJ&.4.........|
+0x000000a16fabf4c0: 00000000 00000000 6fabf500 000000a1 |...........o....|
+0x000000a16fabf4d0: 21685140 00000032 00000000 00000000 |@Qh!2...........|
+arch: aarch64
+{{{module:0:libc++.so.2:elf:88c34de71d6e1ce61cd3479a5744d609c622cd09}}}
+{{{mmap:0xf7e928d000:0x78000:load:0:r:0}}}
+{{{mmap:0xf7e9305000:0x89000:load:0:x:0x78000}}}
+{{{mmap:0xf7e938e000:0x5000:load:0:rw:0x101000}}}
+{{{mmap:0xf7e9393000:0x13000:load:0:rw:0x106000}}}
+{{{module:0x1:libc++abi.so.1:elf:6227ab1d2001ed3c00531(exit 1)
+a8f41e15c4065efa97f}}}
+{{{mmap:0x16c48560000:0x12000:load:0x1:r:0}}}
+{{{mmap:0x16c48572000:0x1e000:load:0x1:x:0x12000}}}
+{{{mmap:0x16c48590000:0x2000:load:0x1:rw:0x30000}}}
+{{{mmap:0x16c48592000:0x1000:load:0x1:rw:0x32000}}}
+{{{module:0x2:<VMO#9815=/boot/bin/memgraph>:elf:6903b6d6af3fe36f181a400154a684b21f7c77af}}}
+{{{mmap:0x31d541ea000:0xa000:load:0x2:r:0}}}
+{{{mmap:0x31d541f4000:0xf000:load:0x2:x:0xa000}}}
+{{{mmap:0x31d54203000:0x1000:load:0x2:rw:0x19000}}}
+{{{module:0x3:libc.so:elf:f656f072b52cd64f7b368ce3653ecccc57330e13}}}
+{{{mmap:0x80c7c68e1000:0x66000:load:0x3:r:0}}}
+{{{mmap:0x80c7c6947000:0x6b000:load:0x3:x:0x66000}}}
+{{{mmap:0x80c7c69b2000:0x2000:load:0x3:rw:0xd1000}}}
+{{{mmap:0x80c7c69b4000:0x13000:load:0x3:rw:0xd3000}}}
+{{{bt:0:0x80c7c696596c:pc:from context}}}
+{{{bt:1:0x16c4858be8c:ra:from CFI}}}
+{{{bt:2:0x16c485721b0:ra:from CFI}}}
+{{{bt:3:0x16c4858af98:ra:from CFI}}}
+{{{bt:4:0x16c4858e010:ra:from CFI}}}
+{{{bt:5:0x16c4858dff4:ra:from CFI}}}
+{{{bt:6:0xf7e93309a8:ra:from CFI}}}
+{{{bt:7:0xf7e9330958:ra:from CFI}}}
+{{{bt:8:0x31d541ffda8:ra:from CFI}}}
+{{{bt:9:0x80c7c6960984:ra:from CFI}}}
+{{{bt:10:0x31d5420260c:ra:from CFI}}}
+{{{reset:end}}}
+### lagos-sh 'lsusb'
+(exit 1)
+[src/devices/usb/bin/lsusb/src/main.rs(8)] while opening from namespace: NOT_FOUND
+
+Caused by:
+    NOT_FOUND
+### lagos-sh 'threads 2>&1 | dd bs=1 count=400 2>/dev/null'
+[component_manager] WARN: failed to load object: [reading object at "libinspector.so" failed: A FIDL client's channel to the protocol fuchsia.io.File was closed: NOT_FOUND]
+Error loading shared library libinspector.so: ZX_ERR_NOT_FOUND (needed by /boot/bin/threads)
+Error relocating /boot/bin/threads: inspector_read_general_regs: symbol not found
+Error relocating /boot/bin/threads: inspector_print_general_regs: symbol not found
+Error relocating /boot/bin/threads: inspector_print_backtrace_markup: symbol not found
+Error relocating /boot/bin/threads: inspector_print_markup_context: symbol not found
+crashsvc: exception received for process "/boot/bin/threads", processing
+{{{reset:begin}}}
+<== CRASH: process /boot/bin/threads[10457] thread initial-thread[10459]
+<== write not-present page fault (error ZX_ERR_NOT_FOUND) at 0, PC at 0x83cf219f827c
+ x0                0x7f x1                 0x1 x2       0x343ca010000 x3              0x1000
+ x4                 0x3 x5                0x11 x6                 0x1 x7               0x203
+ x8                 0x1 x9      0x83cf21a6f000 x10              0x510 x11     0x83cf21a6f988
+ x12                0x1 x13      0x343ca007f94 x14      0x343ca007c18 x15          0x3ffffff
+ x16     0x83cf21a5c840 x17     0x83cf219f827c x18                  0 x19     0x83cf21a6f950
+ x20     0x83cf21a6fc98 x21         0xe3c27313 x22     0x83cf21a6fca0 x23     0x83cf21a60000
+ x24     0x83cf21a60000 x25     0x83cf21a6f000 x26     0x83cf21a6e000 x27     0x83cf21a6f000
+ x28     0x83cf21a6f000 x29     0x81f7306fedf0 lr      0x83cf21a54790 sp      0x81f7306fed50
+ pc      0x83cf219f827c psr         0x20000000 far                  0 esr         0x92000044
+bottom of user stack:
+0x000081f7306fed50: e3c272bf e3c25ecf e3925257 e3c27317 |.r...^..WR...s..|
+0x000081f7306fed60: e3c27313 00000000 00000000 00000000 |.s..............|
+0x000081f7306fed70: 4150585d 00001000 00000024 00000038 |]XPA....$...8...|
+0x000081f7306fed80: 00000001 0000004a 00000000 0000004a |....J.......J...|
+0x000081f7306fed90: 00000000 00000010 00000014 00000005 |................|
+0x000081f7306feda0: 00000001 00000004 6f6f622f 69622f74 |......../boot/bi|
+0x000081f7306fedb0: 68742f6e 64616572 21a50073 000083cf |n/threads..!....|
+0x000081f7306fedc0: 306fedc0 000081f7 e3c252c3 00000000 |..o0.....R......|
+0x000081f7306fedd0: 306fed94 000081f7 306fed70 000081f7 |..o0....p.o0....|
+0x000081f7306fede0: 00000005 0000004a 00000000 00000000 |....J...........|
+0x000081f7306fedf0: 306fefa0 000081f7 21a52cb4 000083cf |..o0.....,.!....|
+0x000081f7306fee00: 306fee60 000081f7 306fee50 000081f7 |`.o0....P.o0....|
+0x000081f7306fee10: 0000f000 00000000 00000000 00000000 |................|
+0x000081f7306fee20: 000e5220 00000000 00000000 00000000 | R..............|
+0x000081f7306fee30: 21a6fb10 000083cf 21a6f9d0 000083cf |...!.......!....|
+0x000081f7306fee40: e3c252c3 00000000 306fee60 000081f7 |.R......`.o0....|
+memory dump near pc:
+0x000083cf219f824c: e0 03 13 2a 0b 00 00 94 28 03 00 90 08 a9 42 f9 |...*....(.....B.
+0x000083cf219f825c: e8 00 00 b4 5e 86 00 f8 fd 7b bf a9 fd 03 00 91 |....^....{......
+0x000083cf219f826c: f1 87 01 94 fd 7b c1 a8 5e 8e 5f f8 c0 03 5f d6 |.....{..^._..._.
+0x000083cf219f827c: 5e 86 00 f8 fd 7b bf a9 fd 03 00 91 01 00 00 94 |^....{..........
+memory dump near thread pointer:
+inspector: failed reading memory @0x0, error: -25
+arch: aarch64
+{{{module:0:libc.so:elf:f656f072b52cd64f7b368ce3653ecccc57330e13}}}
+{{{mmap:0x83cf2198b000:0x66000:load:0:r:0}}}
+{{{mmap:0x83cf219f1000:0x6b000:load:0:x:0x66000}}}
+{{{mmap:0x83cf21a5c000:0x2000:load:0:rw:0xd1000}}}
+{{{mmap:0x83cf21a5e000:0x13000:load:0:rw:0xd3000}}}
+Reading from stdin isn't supported.
+Usage: dd [OPTIONS]
+dd can be used to convert and copy files
+ bs=BYTES  : read and write BYTES bytes at a time
+ count=N   : copy only N input blocks
+ ibs=BYTES : read BYTES bytes at a time (default: 512)
+ if=FILE   : read from FILE instead of stdin
+ obs=BYTES : write BYTES bytes at a time (default: 512)
+ of=FILE   : write to FILE instead of stdout
+ seek=N    : skip N obs-sized blocks at start of output
+ skip=N    : s(exit 1)
+kip N ibs-sized blocks at start of input
+ conv=sync : pad input to input block size
+{{{bt:0:0x83cf219f827c:pc:from context}}}
+ N and BYTES may be followed by the following multiplicitive
+ suffixes: c = 1, w = 2, b = 512, kB = 1000, K = 1024,
+{{{bt:1:0x83cf21a54790:ra:from CFI}}}
+           MB = 1000 * 1000, M = 1024 * 1024, xM = M,
+           GB = 1000 * 1000 * 1000, G = 1024 * 1024 * 1024
+{{{bt:2:0x83cf21a52cb4:ra:from CFI}}}
+ --help : Show this help message
+{{{bt:3:0x83cf21a51dac:ra:from CFI}}}
+{{{reset:end}}}
+
+[exited with code 0]
