@@ -1,22 +1,54 @@
+diff --git a/boards/arm64/BUILD.bazel b/boards/arm64/BUILD.bazel
+index 5893fc2d253..89d6854a555 100644
+--- a/boards/arm64/BUILD.bazel
++++ b/boards/arm64/BUILD.bazel
+@@ -37,10 +37,13 @@ fuchsia_board_configuration(
+             "size_checker_maximum_bytes": 5216665600,
+         },
+     },
++    # [fuchsia-lagos] This fork's arm64 board is the Moto G06 (MediaTek MT6768):
++    # the platform ID selects src/devices/board/drivers/lagos-devicetree
++    # (fuchsia.mediatek.platform MEDIATEK / MT6768) instead of qemu-arm64.
+     hardware_info = {
+-        "name": "qemu-arm64",
++        "name": "lagos",
+         "product_id": 1,
+-        "vendor_id": 1,
++        "vendor_id": 7,
+         "revision": 1,
+     },
+     partitions_configuration = "//build/bazel/assembly/partitions_configurations:arm64",
 diff --git a/boards/arm64/BUILD.gn b/boards/arm64/BUILD.gn
-index 769b13237a2..ff62798c0f2 100644
+index 769b13237a2..d71e0b154ad 100644
 --- a/boards/arm64/BUILD.gn
 +++ b/boards/arm64/BUILD.gn
-@@ -67,6 +67,14 @@ board_input_bundle("main_bundle") {
+@@ -57,15 +57,22 @@ board_input_bundle("main_bundle") {
        package_set = "bootfs"
-       driver_components = [ "meta/pl031-rtc.cm" ]
+       driver_components = [ "meta/ahci.cm" ]
+     },
++
++    # [fuchsia-lagos] qemu-arm64 and pl031-rtc removed: on the Moto G06 they
++    # touched QEMU's PCI ECAM and PL031 addresses. The lagos board driver
++    # publishes the devicetree instead. See fuchsia-lagos/docs/19.
+     {
+-      package_target = "//src/devices/board/drivers/qemu-arm64:package"
++      package_target = "//src/devices/board/drivers/lagos-devicetree:package"
+       package_set = "bootfs"
+-      driver_components = [ "meta/qemu-arm64.cm" ]
++      driver_components = [ "meta/lagos-devicetree.cm" ]
      },
 +
 +    # [fuchsia-lagos] MediaTek MUSB USB device controller (Moto G06 / MT6768),
-+    # published by qemu-arm64's lagos-usb.cc. See fuchsia-lagos/docs/17.
-+    {
++    # bound by `compatible` from the lagos devicetree. See fuchsia-lagos/docs/17.
+     {
+-      package_target = "//src/devices/rtc/drivers/pl031-rtc:package"
 +      package_target = "//src/devices/usb/drivers/mt-musb:package"
-+      package_set = "bootfs"
+       package_set = "bootfs"
+-      driver_components = [ "meta/pl031-rtc.cm" ]
 +      driver_components = [ "meta/mt-musb.cm" ]
-+    },
+     },
    ]
    version = build_info_version
- }
 diff --git a/build/bazel/templates/template.bazelrc b/build/bazel/templates/template.bazelrc
 index 120a67039ad..1521ed75e11 100644
 --- a/build/bazel/templates/template.bazelrc
@@ -44,10 +76,18 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/build/drivers/all_drivers_list.txt b/build/drivers/all_drivers_list.txt
-index 8b93091f080..3f9f9497eae 100644
+index 8b93091f080..94a5df26f11 100644
 --- a/build/drivers/all_drivers_list.txt
 +++ b/build/drivers/all_drivers_list.txt
-@@ -314,6 +314,7 @@
+@@ -108,6 +108,7 @@
+ //src/devices/board/drivers/astro:astro-driver
+ //src/devices/board/drivers/crosvm:driver
+ //src/devices/board/drivers/integration-test:integration-test-driver
++//src/devices/board/drivers/lagos-devicetree:driver
+ //src/devices/board/drivers/nelson/post-init:post-init-driver
+ //src/devices/board/drivers/nelson:nelson-module-driver
+ //src/devices/board/drivers/qemu-arm64:qemu-arm64-driver
+@@ -314,6 +315,7 @@
  //src/devices/tpm/drivers/tpm:fuchsia_driver
  //src/devices/usb/drivers/dwc2:dwc2-driver
  //src/devices/usb/drivers/dwc3:dwc3-driver
@@ -137,122 +177,239 @@ index 00000000000..d766c7e61cb
 +extend uint fuchsia.BIND_PLATFORM_DEV_DID {
 +  MUSB_PERIPHERAL = 0x01,
 +};
-diff --git a/src/devices/board/drivers/qemu-arm64/BUILD.gn b/src/devices/board/drivers/qemu-arm64/BUILD.gn
-index 101a247e754..538a1e786b9 100644
---- a/src/devices/board/drivers/qemu-arm64/BUILD.gn
-+++ b/src/devices/board/drivers/qemu-arm64/BUILD.gn
-@@ -30,6 +30,7 @@ fuchsia_cc_driver("qemu-arm64-driver") {
-     "qemu-bus.cc",
-     "qemu-pci.cc",
-     "qemu-rtc.cc",
-+    "lagos-usb.cc",
-   ]
-   deps = [
-     ":qemu-arm64_bind",
-diff --git a/src/devices/board/drivers/qemu-arm64/lagos-usb.cc b/src/devices/board/drivers/qemu-arm64/lagos-usb.cc
+diff --git a/src/devices/board/drivers/lagos-devicetree/BUILD.gn b/src/devices/board/drivers/lagos-devicetree/BUILD.gn
 new file mode 100644
-index 00000000000..88f6a3ef712
+index 00000000000..8c288aba4b3
 --- /dev/null
-+++ b/src/devices/board/drivers/qemu-arm64/lagos-usb.cc
-@@ -0,0 +1,64 @@
++++ b/src/devices/board/drivers/lagos-devicetree/BUILD.gn
+@@ -0,0 +1,54 @@
++# Copyright 2026 The Fuchsia Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/bind/bind.gni")
++import("//build/drivers.gni")
++
++# [fuchsia-lagos] Devicetree board driver for the Moto G06 (MT6768).
++
++driver_bind_rules("lagos-devicetree-bind") {
++  rules = "meta/lagos-devicetree.bind"
++  bind_output = "lagos-devicetree.bindbc"
++  deps = [
++    "//src/devices/bind/fuchsia",
++    "//src/devices/bind/fuchsia.mediatek.platform",
++    "//src/devices/bind/fuchsia.platform",
++  ]
++}
++
++fuchsia_cc_driver("driver") {
++  output_name = "lagos-devicetree"
++  sources = [
++    "lagos-devicetree.cc",
++    "lagos-devicetree.h",
++  ]
++  deps = [
++    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
++    "//sdk/fidl/fuchsia.hardware.platform.bus:fuchsia.hardware.platform.bus_cpp",
++    "//sdk/lib/driver/component/cpp",
++    "//sdk/lib/driver/devicetree/manager",
++    "//sdk/lib/driver/devicetree/visitors:registry",
++    "//sdk/lib/driver/devicetree/visitors/default",
++    "//sdk/lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic:arm-gic.static",
++    "//sdk/lib/driver/logging/cpp",
++    "//src/devices/lib/driver:driver_runtime",
++    "//zircon/system/ulib/zx",
++  ]
++}
++
++fuchsia_driver_component("component") {
++  component_name = "lagos-devicetree"
++  deps = [
++    ":driver",
++    ":lagos-devicetree-bind",
++  ]
++  info = "meta/lagos-devicetree-info.json"
++  manifest = "meta/lagos-devicetree.cml"
++}
++
++fuchsia_driver_package("package") {
++  package_name = "lagos-devicetree"
++  driver_components = [ ":component" ]
++  export_to_bazel = true
++}
+diff --git a/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.cc b/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.cc
+new file mode 100644
+index 00000000000..4804c4cd3f1
+--- /dev/null
++++ b/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.cc
+@@ -0,0 +1,68 @@
 +// Copyright 2026 The Fuchsia Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
-+// [fuchsia-lagos] The Moto G06 (MT6768) boots with the arm64 board config,
-+// so this qemu-arm64 board driver is the one that binds. Until lagos has its
-+// own (devicetree) board driver, it also publishes the MediaTek MUSB USB
-+// device controller for src/devices/usb/drivers/mt-musb. See
-+// fuchsia-lagos/docs/17.
++#include "src/devices/board/drivers/lagos-devicetree/lagos-devicetree.h"
 +
 +#include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
-+#include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
-+#include <lib/ddk/debug.h>
-+#include <zircon/status.h>
++#include <lib/driver/component/cpp/driver_export2.h>
++#include <lib/driver/devicetree/manager/manager.h>
++#include <lib/driver/devicetree/manager/publisher-dev.h>
++#include <lib/driver/devicetree/visitors/default/default.h>
++#include <lib/driver/devicetree/visitors/drivers/interrupt-controllers/arm-gic/arm-gic-visitor.h>
++#include <lib/driver/devicetree/visitors/registry.h>
++#include <lib/driver/logging/cpp/logger.h>
 +
-+#include "qemu-bus.h"
++namespace lagos_dt {
 +
-+namespace board_qemu_arm64 {
-+namespace fpbus = fuchsia_hardware_platform_bus;
++zx::result<> LagosDevicetree::Start(fdf::DriverContext context) {
++  node_.Bind(take_node());
++  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
 +
-+namespace {
-+constexpr uint32_t kMediatekVid = 0x07;        // fuchsia.mediatek.platform MEDIATEK
-+constexpr uint32_t kMusbPeripheralDid = 0x01;  // MUSB_PERIPHERAL
-+constexpr uint32_t kMt6768Pid = 0x01;          // MT6768
-+constexpr uint32_t kUsbIrq = 32 + 0x61;        // GIC SPI 97, level high (stock DT)
-+}  // namespace
-+
-+zx_status_t QemuArm64::LagosUsbInit() {
-+  static const std::vector<fpbus::Mmio> kMmios{
-+      {{.base = 0x11200000, .length = 0x10000}},  // MUSB core
-+      {{.base = 0x11cc0000, .length = 0x1000}},   // U2 PHY (port 0 at +0x800)
-+      {{.base = 0x10001000, .length = 0x1000}},   // infracfg_ao (USB clock gate)
-+      {{.base = 0x10000000, .length = 0x1000}},   // topckgen (usb_top_sel mux)
-+  };
-+  static const std::vector<fpbus::Irq> kIrqs{
-+      {{
-+          .irq = fpbus::IrqSpec::WithIrq(kUsbIrq),
-+          .mode = fpbus::ZirconInterruptMode::kLevelHigh,
-+      }},
-+  };
-+  fpbus::Node dev;
-+  dev.name() = "mt-musb";
-+  dev.vid() = kMediatekVid;
-+  dev.pid() = kMt6768Pid;
-+  dev.did() = kMusbPeripheralDid;
-+  dev.mmio() = kMmios;
-+  dev.irq() = kIrqs;
-+
-+  fidl::Arena<> fidl_arena;
-+  fdf::Arena arena('MUSB');
-+  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, dev));
-+  if (!result.ok()) {
-+    zxlogf(ERROR, "lagos: NodeAdd(mt-musb) request failed: %s", result.FormatDescription().data());
-+    return result.status();
++  zx::result manager = fdf_devicetree::Manager::CreateFromNamespace(*incoming);
++  if (manager.is_error()) {
++    fdf::error("lagos: devicetree manager: {}", manager);
++    return manager.take_error();
 +  }
-+  if (result->is_error()) {
-+    zxlogf(ERROR, "lagos: NodeAdd(mt-musb) failed: %s", zx_status_get_string(result->error_value()));
-+    return result->error_value();
++
++  // Visitors are linked in statically: the defaults (bind properties from
++  // `compatible`, `reg` -> MMIO, BTI, boot metadata, SMC, ...) plus the GIC
++  // visitor that turns `interrupts` into Zircon IRQs.
++  fdf_devicetree::VisitorRegistry visitors;
++  if (zx::result r = visitors.RegisterVisitor(
++          std::make_unique<fdf_devicetree::DefaultVisitors<arm_gic_dt::ArmGicVisitor>>());
++      r.is_error()) {
++    fdf::error("lagos: register visitors: {}", r);
++    return r.take_error();
 +  }
-+  zxlogf(INFO, "lagos: published mt-musb");
-+  return ZX_OK;
++
++  if (zx::result r = manager->Walk(visitors); r.is_error()) {
++    fdf::error("lagos: devicetree walk: {}", r);
++    return r.take_error();
++  }
++
++  zx::result pbus = incoming->Connect<fuchsia_hardware_platform_bus::Service::PlatformBus>();
++  if (pbus.is_error() || !pbus->is_valid()) {
++    fdf::error("lagos: connect pbus: {}", pbus);
++    return pbus.take_error();
++  }
++  zx::result group_manager = incoming->Connect<fuchsia_driver_framework::CompositeNodeManager>();
++  if (group_manager.is_error()) {
++    fdf::error("lagos: connect composite node manager: {}", group_manager);
++    return group_manager.take_error();
++  }
++
++  auto pbus_client = fdf::WireSyncClient(std::move(pbus.value()));
++  auto mgr_client = fidl::SyncClient(std::move(group_manager.value()));
++  fdf_devicetree::PublisherDev publisher(pbus_client, mgr_client, node_);
++  if (zx::result r = manager->PublishDevices(publisher); r.is_error()) {
++    fdf::error("lagos: publish devices: {}", r);
++    return r.take_error();
++  }
++  fdf::info("lagos: devicetree board started");
++  return zx::ok();
 +}
 +
-+}  // namespace board_qemu_arm64
-diff --git a/src/devices/board/drivers/qemu-arm64/qemu-bus.cc b/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
-index 9e851c88fea..86f7cc5c518 100644
---- a/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
-+++ b/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
-@@ -27,6 +27,11 @@ int QemuArm64::Thread() {
-   zx_status_t status;
-   zxlogf(INFO, "qemu-bus thread running ");
- 
-+  // [fuchsia-lagos] First, so a QEMU-specific failure below can't skip it.
-+  if (zx_status_t s = LagosUsbInit(); s != ZX_OK) {
-+    zxlogf(ERROR, "%s: LagosUsbInit() failed %d", __func__, s);
-+  }
++}  // namespace lagos_dt
 +
-   status = PciInit();
-   if (status != ZX_OK) {
-     zxlogf(ERROR, "%s: PciInit() failed %d", __func__, status);
-diff --git a/src/devices/board/drivers/qemu-arm64/qemu-bus.h b/src/devices/board/drivers/qemu-arm64/qemu-bus.h
-index d53ed24b483..ecbe1c60c3b 100644
---- a/src/devices/board/drivers/qemu-arm64/qemu-bus.h
-+++ b/src/devices/board/drivers/qemu-arm64/qemu-bus.h
-@@ -38,6 +38,7 @@ class QemuArm64 : public ddk::Device<QemuArm64> {
-   zx_status_t PciInit();
-   zx_status_t PciAdd();
-   zx_status_t RtcInit();
-+  zx_status_t LagosUsbInit();  // [fuchsia-lagos]
- 
-   // TODO(https://fxbug.dev/42059490): Switch to fdf::SyncClient once it's supported.
-   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
++FUCHSIA_DRIVER_EXPORT2(lagos_dt::LagosDevicetree);
+diff --git a/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.h b/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.h
+new file mode 100644
+index 00000000000..948069d85a8
+--- /dev/null
++++ b/src/devices/board/drivers/lagos-devicetree/lagos-devicetree.h
+@@ -0,0 +1,29 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SRC_DEVICES_BOARD_DRIVERS_LAGOS_DEVICETREE_LAGOS_DEVICETREE_H_
++#define SRC_DEVICES_BOARD_DRIVERS_LAGOS_DEVICETREE_LAGOS_DEVICETREE_H_
++
++#include <fidl/fuchsia.driver.framework/cpp/fidl.h>
++#include <lib/driver/component/cpp/driver_base2.h>
++#include <lib/zx/result.h>
++
++namespace lagos_dt {
++
++// [fuchsia-lagos] Board driver for the Motorola Moto G06 "lagos" (MediaTek
++// MT6768). Publishes every node of the devicetree the boot shim hands over
++// (ZBI_TYPE_DEVICETREE) as a platform device, with MMIO and GIC interrupts,
++// so device drivers bind by `compatible`. See fuchsia-lagos/docs/19.
++class LagosDevicetree : public fdf::DriverBase2 {
++ public:
++  LagosDevicetree() : fdf::DriverBase2("lagos-devicetree") {}
++  zx::result<> Start(fdf::DriverContext context) override;
++
++ private:
++  fidl::SyncClient<fuchsia_driver_framework::Node> node_;
++};
++
++}  // namespace lagos_dt
++
++#endif  // SRC_DEVICES_BOARD_DRIVERS_LAGOS_DEVICETREE_LAGOS_DEVICETREE_H_
+diff --git a/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree-info.json b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree-info.json
+new file mode 100644
+index 00000000000..ba1481474d9
+--- /dev/null
++++ b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree-info.json
+@@ -0,0 +1,9 @@
++{
++    "short_description": "Motorola Moto G06 (MediaTek MT6768) devicetree board driver",
++    "manufacturer": "Motorola / MediaTek",
++    "families": [],
++    "models": [],
++    "areas": [
++        "Board"
++    ]
++}
+diff --git a/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.bind b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.bind
+new file mode 100644
+index 00000000000..583df8eb4c2
+--- /dev/null
++++ b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.bind
+@@ -0,0 +1,10 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++using fuchsia.platform;
++using fuchsia.mediatek.platform;
++
++fuchsia.Service == "fuchsia.hardware.platform.bus.Service";
++fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK;
++fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_PID.MT6768;
+diff --git a/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.cml b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.cml
+new file mode 100644
+index 00000000000..a43ed71f602
+--- /dev/null
++++ b/src/devices/board/drivers/lagos-devicetree/meta/lagos-devicetree.cml
+@@ -0,0 +1,21 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++{
++    include: [
++        "driver_component/driver.shard.cml",
++        "inspect/client.shard.cml",
++        "syslog/client.shard.cml",
++    ],
++    program: {
++        runner: "driver",
++        binary: "driver/lagos-devicetree.so",
++        bind: "meta/bind/lagos-devicetree.bindbc",
++        default_dispatcher_opts: [ "allow_sync_calls" ],
++        colocate: "true",
++    },
++    use: [
++        { service: "fuchsia.hardware.platform.bus.Service" },
++        { protocol: "fuchsia.driver.framework.CompositeNodeManager" },
++    ],
++}
 diff --git a/src/devices/usb/drivers/mt-musb/BUILD.gn b/src/devices/usb/drivers/mt-musb/BUILD.gn
 new file mode 100644
-index 00000000000..16f4e2aaa9a
+index 00000000000..d998856c74c
 --- /dev/null
 +++ b/src/devices/usb/drivers/mt-musb/BUILD.gn
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,64 @@
 +# Copyright 2026 The Fuchsia Authors. All rights reserved.
 +# Use of this source code is governed by a BSD-style license that can be
 +# found in the LICENSE file.
@@ -271,6 +428,7 @@ index 00000000000..16f4e2aaa9a
 +  dml_label = ":mt-musb-dml"
 +  bind_output = "mt-musb.bindbc"
 +  deps = [
++    "//src/devices/bind/fuchsia",
 +    "//src/devices/bind/fuchsia.mediatek.platform",
 +    "//src/devices/bind/fuchsia.platform",
 +  ]
@@ -333,25 +491,36 @@ index 00000000000..bdb591bc20f
 +}
 diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind b/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind
 new file mode 100644
-index 00000000000..82aa844ba92
+index 00000000000..18252a79a9e
 --- /dev/null
 +++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind
-@@ -0,0 +1,9 @@
+@@ -0,0 +1,20 @@
 +// Copyright 2026 The Fuchsia Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +
 +// WARNING: THIS FILE IS GENERATED BY dmlc. DO NOT EDIT.
 +
-+fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
-+fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK;
-+fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL;
++composite mt_musb;
++
++using fuchsia;
++
++primary parent "pdev" {
++  if fuchsia.COMPATIBLE == "mediatek,mt6768-usb20" {
++      true;
++  } else {
++      fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
++      fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK;
++      fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL;
++  }
++}
++
 diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml b/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml
 new file mode 100644
-index 00000000000..79f385600dc
+index 00000000000..4f472f7ba08
 --- /dev/null
 +++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml
-@@ -0,0 +1,34 @@
+@@ -0,0 +1,35 @@
 +// Copyright 2026 The Fuchsia Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -359,7 +528,6 @@ index 00000000000..79f385600dc
 +// WARNING: THIS FILE IS GENERATED BY dmlc. DO NOT EDIT.
 +{
 +    include: [
-+        "driver/platform-device.shard.cml",
 +        "driver_component/driver.shard.cml",
 +        "inspect/client.shard.cml",
 +        "syslog/client.shard.cml",
@@ -374,7 +542,9 @@ index 00000000000..79f385600dc
 +        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
 +        { service: "fuchsia.hardware.usb.dci.UsbDciService" },
 +    ],
-+    use: [],
++    use: [
++        { service: "fuchsia.hardware.platform.device.Service" },
++    ],
 +    expose: [
 +        {
 +            service: "fuchsia.hardware.usb.dci.UsbDciService",
@@ -388,30 +558,42 @@ index 00000000000..79f385600dc
 +}
 diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml b/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml
 new file mode 100644
-index 00000000000..373aca69372
+index 00000000000..0bdb7d06962
 --- /dev/null
 +++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml
-@@ -0,0 +1,32 @@
+@@ -0,0 +1,44 @@
 +// Copyright 2026 The Fuchsia Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
 +{
 +    name: "mt-musb",
-+    include: [
-+        "driver/platform-device.shard.cml",
-+        "driver_component/driver.shard.cml",
-+    ],
++    include: [ "driver_component/driver.shard.cml" ],
 +    program: {
 +        default_dispatcher_opts: [ "allow_sync_calls" ],
-+        bind: {
-+            banjo: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
-+            vid: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK",
-+            did: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL",
-+        },
 +    },
 +    capabilities: [
 +        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
 +        { service: "fuchsia.hardware.usb.dci.UsbDciService" },
++    ],
++    use: [
++        {
++            // The lagos-devicetree board publishes every devicetree node as a
++            // composite node spec whose primary parent is the platform device,
++            // so this is a composite driver (like dwc2). docs/19.
++            name: "pdev",
++            service: "fuchsia.hardware.platform.device.Service",
++            primary: true,
++            bind: {
++                one_of: [
++                    { compat: "mediatek,mt6768-usb20" },
++                    {
++                        protocol: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
++                        vid: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK",
++                        did: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL",
++                    },
++                ],
++            },
++        },
 +    ],
 +    expose: [
 +        {
@@ -426,10 +608,10 @@ index 00000000000..373aca69372
 +}
 diff --git a/src/devices/usb/drivers/mt-musb/mt-musb.cc b/src/devices/usb/drivers/mt-musb/mt-musb.cc
 new file mode 100644
-index 00000000000..9eae2f0436c
+index 00000000000..3613742d9a3
 --- /dev/null
 +++ b/src/devices/usb/drivers/mt-musb/mt-musb.cc
-@@ -0,0 +1,1114 @@
+@@ -0,0 +1,1115 @@
 +// Copyright 2026 The Fuchsia Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style license that can be
 +// found in the LICENSE file.
@@ -777,7 +959,8 @@ index 00000000000..9eae2f0436c
 +
 +zx::result<> MtMusb::Start(fdf::DriverContext context) {
 +  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
-+  zx::result pdev_client = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
++  zx::result pdev_client =
++      incoming->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
 +  if (pdev_client.is_error()) {
 +    fdf::error("connect pdev: {}", pdev_client);
 +    return pdev_client.take_error();
@@ -1786,7 +1969,7 @@ index 935031fc429..085a14d833d 100644
      fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.USB;
      fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.test.platform.BIND_PLATFORM_DEV_DID.VIRTUAL_DEVICE;
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..fd25d3ff3c8 100644
+index 0f622fa45ca..986a73bf675 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -1854,7 +2037,7 @@ index 0f622fa45ca..fd25d3ff3c8 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v7.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v8.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
@@ -2650,10 +2833,10 @@ index 7dcc03863c6..723475edfd8 100644
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
 diff --git a/zircon/kernel/platform/debug.cc b/zircon/kernel/platform/debug.cc
-index 71704a5a22a..04e01961691 100644
+index 71704a5a22a..07edb2405ed 100644
 --- a/zircon/kernel/platform/debug.cc
 +++ b/zircon/kernel/platform/debug.cc
-@@ -643,7 +643,217 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
+@@ -643,7 +643,218 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
    }
  }
  
@@ -2781,7 +2964,8 @@ index 71704a5a22a..04e01961691 100644
 +    slot = 0;
 +  } else if (LagosLineStarts("lagos") || LagosLineHas("PANIC") || LagosLineHas("ASSERT") ||
 +             LagosLineHas("panic (") || LagosLineHas("mt-musb") || LagosLineHas("usb-peripheral") ||
-+             LagosLineHas("usb-cdc") || LagosLineHas("netsvc")) {
++             LagosLineHas("usb-cdc") || LagosLineHas("netsvc") || LagosLineHas("lagos-devicetree") ||
++             LagosLineHas("lagos:")) {
 +    slot = gLagosPinNext;
 +    gLagosPinNext = gLagosPinNext + 1 < kLagosPinSlots ? gLagosPinNext + 1 : 1;
 +  } else {
@@ -2871,7 +3055,7 @@ index 71704a5a22a..04e01961691 100644
    if (!platform_serial_enabled()) {
      return ZX_OK;
    }
-@@ -663,6 +873,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
+@@ -663,6 +874,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
  }
  
  void platform_dputs_irq(const char* str, size_t len) {
@@ -2879,7 +3063,7 @@ index 71704a5a22a..04e01961691 100644
    if (!platform_serial_enabled()) {
      return;
    }
-@@ -749,6 +960,7 @@ int platform_pgetc(char* c) {
+@@ -749,6 +961,7 @@ int platform_pgetc(char* c) {
  }
  
  void platform_pputc(char c) {

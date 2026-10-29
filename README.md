@@ -20,7 +20,7 @@ community/history of the Fuchsia tree.
 | **Phase** | Hito 0 bring-up — **Fuchsia boots to `Bootup completed` on all 8 CPUs with working timer interrupts** ✅ (attempt 24; [docs/16](docs/16-userspace-reached.md)) |
 | **Target SoC** | MediaTek **MT6768** (basis of "Helio G81") |
 | **Device** | Motorola Moto G06 `lagos` (XT2535-1), bootloader unlocked, A/B slots |
-| **Next milestone** | remote shell over USB (`netruncmd` reaches netsvc but cannot launch `sh` yet), then a proper MT6768 devicetree board driver |
+| **Next milestone** | storage (eMMC/UFS) or display; the board is now a real devicetree board (`lagos-devicetree`, [docs/19](docs/19-lagos-devicetree-board.md)), so new drivers just need a DTB node |
 | **Output channel** | **USB**: the phone enumerates as a CDC-Ethernet device (own MUSB driver, attempt 27) and the host streams logs with `loglistener` ([docs/17](docs/17-usb-peripheral.md)). Framebuffer text console as fallback ([docs/15](docs/15-framebuffer-console.md)) |
 
 ## The milestone ladder

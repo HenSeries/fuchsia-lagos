@@ -102,6 +102,19 @@
 		interrupts = <1 9 4>;                     /* maintenance PPI */
 	};
 
+	/* Attempt 30: the USB device controller, published by the lagos-devicetree
+	 * board driver and bound by mt-musb via `compatible` (docs/19). reg order
+	 * is what the driver maps: MUSB core, U2 PHY (port 0 at +0x800),
+	 * infracfg_ao (CLK_IFR_ICUSB gate), topckgen (usb_top_sel mux). */
+	usb@11200000 {
+		compatible = "mediatek,mt6768-usb20";
+		reg = <0x0 0x11200000 0x0 0x10000>,
+		      <0x0 0x11cc0000 0x0 0x1000>,
+		      <0x0 0x10001000 0x0 0x1000>,
+		      <0x0 0x10000000 0x0 0x1000>;
+		interrupts = <0 0x61 4>;	/* SPI 97, level high (stock DT) */
+	};
+
 	/* console UART: MediaTek mt6577-uart == 16550 w/ 32-bit regs -> dw8250 driver */
 	uart0: serial@11002000 {
 		compatible = "mediatek,mt6577-uart";

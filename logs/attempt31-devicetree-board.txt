@@ -1,0 +1,118 @@
+=== flasheador (intento 31, 60 min) ===
+fastboot up 22:25:28
+Sending 'boot_a' (28544 KB)                        OKAY [  0.708s]
+Writing 'boot_a'                                   OKAY [  0.536s]
+Finished. Total time: 1.263s
+Rebooting                                          OKAY [  0.000s]
+Finished. Total time: 0.050s
+rebooted at 22:25:29
+netsvc up at 22:25:49
+### lagos-sh 'echo board ok; ps'
+board ok
+TASK              PSS PRIVATE  SHARED   STATE NAME
+j: 1051        176.6M  160.1M                 root
+  p: 1201       10.6M   10.2M   5280K         bin/component_manager
+  j: 1923      164.5M  149.3M                 
+    j: 1929    847.5K    400K                 
+      p: 1966  847.5K    400K   5408K         console.cm
+    j: 2066    891.5K    400K                 
+      p: 2088  891.5K    400K   5496K         kernel-args-forwarder.cm
+    j: 2160    985.9K    360K                 
+      p: 2284  985.9K    360K   4108K         critical-services.cm
+    j: 2198    139.0M  138.3M                 
+      p: 2316  139.0M  138.3M   4324K         sysmem.cm
+    j: 2304   2489.5K   1032K                 
+      p: 2357 2489.5K   1032K   8536K         archivist.cm
+    j: 3058   1899.8K    856K                 
+      p: 3079 1899.8K    856K   4940K         driver_manager.cm
+    j: 3462    997.9K    480K                 
+      p: 3500  997.9K    480K   3716K         role_manager.cm
+    j: 3585   1773.5K    792K                 
+      p: 3615 1773.5K    792K   6476K         driver-index.cm
+    j: 3910   2278.8K   1028K                 
+      p: 4032  971.1K    384K   3852K         netsvc.cm
+      p: 8153  897.5K    404K   5716K         net:sh
+      p: 8280  410.2K    240K   2804K         /boot/bin/ps
+    j: 4010   2386.9K    860K                 
+      p: 4072 2386.9K    860K   9384K         driver-host-root
+    j: 4149    894.3K    588K                 
+      p: 4221  894.3K    588K   3128K         console-launcher.cm
+    j: 5280    575.9K    316K                 
+      p: 5438  575.9K    316K   3200K         device-name-provider.cm
+    j: 5501   1962.0K    588K                 
+      p: 5565 1962.0K    588K   8360K         fshost.cm
+    j: 5556   1971.4K    556K                 
+      p: 5599 1971.4K    556K   8480K         virtual-console.cm
+    j: 5644    858.3K    300K                 
+      p: 5704  858.3K    300K   3040K         memfs.cm
+    j: 7397   5214.1K   2636K                 
+      p: 7414 5214.1K   2636K   11.1M         mt-musb.cm (+2 more)
+  j: 2865          0B      0B                 
+  j: 2874          0B      0B                 
+  j: 3009          0B      0B                 
+  j: 4984     1651.2K    664K                 zircon-shell
+    p: 5079    793.7K    300K   5720K         sh:console
+    p: 5087    857.5K    364K   5716K         sh:console
+TASK              PSS PRIVATE  SHARED   STATE NAME
+### log lines
+[00001.087] 04072.05023 [driver,platform-bus] [platform-bus.cc(723)] VID: 7 PID: 1 board: "lagos"
+[00001.112] 03615.03617 [driver] Found driver: fuchsia-boot:///lagos-devicetree#meta/lagos-devicetree.cm
+[00001.113] 03615.03617 [driver] Found driver: fuchsia-boot:///mt-musb#meta/mt-musb.cm
+[00001.137] 03615.03617 [driver] Found driver: fuchsia-boot:///usb-peripheral#meta/usb-peripheral.cm
+[00001.157] 03079.03081 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///lagos-devicetree#meta/lagos-devicetree.cm to pt
+[00001.178] 03615.03617 [driver] Matched 'fuchsia-boot:///mt-musb#meta/mt-musb.cm' to composite node spec 'usb-11200000'
+[00001.182] 04072.07224 [driver,lagos-devicetree] [lagos-devicetree.cc(62)] lagos: devicetree board started
+[00001.190] 03079.03081 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///mt-musb#meta/mt-musb.cm to usb-11200000
+[00001.228] 07414.07561 [driver,mt-musb] [mt-musb.cc(450)] mt-musb: clocks CG0 0x0->0x0 CLK_CFG_5 0x1010201->0x1010201
+[00001.228] 07414.07561 [driver,mt-musb] [mt-musb.cc(374)] mt-musb: HWVERS 0xe503 EPINFO 0x88 RAMINFO 0x8b POWER 0x21 DEVCTL 0x99
+[00001.229] 07414.07561 [driver,mt-musb] [mt-musb.cc(417)] mt-musb: started, waiting for usb-peripheral
+[00001.246] 03079.03081 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///usb-peripheral#meta/usb-peripheral.cm to mt-musb-dci
+[00001.251] 07414.07561 [driver,usb_device] [usb-peripheral.cc(1351)] DCI driver does not support GetHardwareInfo, falling back to legacy mode
+[00001.252] 07414.07561 [driver,usb_device] [usb-peripheral.cc(316)] Serial number/MAC address not found. Using generic (non-unique) serial number.
+[00001.252] 01201.01306 [boot-drivers:usb-11200000.mt-musb-dci] service `fuchsia.boot.metadata.SerialNumberMetadata` was not available for target `boot-drivers:usb-11200000.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.SerialNumberMetadata from parent at bootstrap/boot-drivers:usb-11200000.mt-musb-dci because parent does not offer the capability
+[00001.252] 01201.01300 [boot-drivers:usb-11200000.mt-musb-dci] service `fuchsia.boot.metadata.MacAddressMetadata` was not available for target `boot-drivers:usb-11200000.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.MacAddressMetadata from parent at bootstrap/boot-drivers:usb-11200000.mt-musb-dci because parent does not offer the capability
+[00001.252] 01201.01300 [boot-drivers:usb-11200000.mt-musb-dci] service `fuchsia.boot.metadata.MacAddressMetadata` was not available for target `boot-drivers:usb-11200000.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.MacAddressMetadata from parent at bootstrap/boot-drivers:usb-11200000.mt-musb-dci because parent does not offer the capability
+[00001.252] 01201.01300 [boot-drivers:usb-11200000.mt-musb-dci] service `fuchsia.boot.metadata.SerialNumberMetadata` was not available for target `boot-drivers:usb-11200000.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.SerialNumberMetadata from parent at bootstrap/boot-drivers:usb-11200000.mt-musb-dci because parent does not offer the capability
+[00001.253] 07414.07561 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kNoConfiguration -> kWaitForFunctionBind
+[00001.253] 07414.07561 [driver,usb_device] [usb-peripheral.cc(508)] Functions registered: [none], pending: [function-000]
+[00001.281] 07414.07561 [driver,usb_device] [usb-peripheral.cc(508)] Functions registered: [function-000], pending: [none]
+[00001.281] 07414.07561 [driver,usb_device] [usb-peripheral.cc(546)] All functions registered. Starting peripheral controller.
+[00001.281] 07414.07561 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kWaitForFunctionBind -> kStarting
+[00001.281] 07414.07561 [driver,usb_device] [usb-peripheral.cc(827)] Starting controller: cur_mode=NONE new_mode=UsbMode::kPeripheral (state=kStarting)
+[00001.281] 07414.07699 [driver,mt-musb] [mt-musb.cc(529)] mt-musb: StartController
+[00001.282] 07414.07699 [driver,mt-musb] [mt-musb.cc(480)] mt-musb: PHY ACR6 0x40100472 DTM0 0x2000000 DTM1 0x3f2f
+[00001.282] 07414.07699 [driver,mt-musb] [mt-musb.cc(541)] mt-musb: soft-connect on, POWER 0x71 DEVCTL 0x98
+[00001.282] 07414.07561 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kStarting -> kPeripheralReady
+[00001.338] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x4 USB 0x1 TX 0x0 RX 0x0
+[00001.452] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x4 USB 0x4 TX 0x0 RX 0x0
+[00001.452] 07414.07798 [driver,mt-musb] [mt-musb.cc(612)] mt-musb: bus reset, high speed
+[00001.452] 07414.08030 [driver,usb_device] [usb-peripheral.cc(2470)] OnHostConnectionChanged: current_state=kPeripheralReady connected=true
+[00001.452] 07414.08030 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kPeripheralReady -> kHostConnected
+[00001.564] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.564] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.565] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.569] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x4 USB 0x4 TX 0x0 RX 0x0
+[00001.569] 07414.07798 [driver,mt-musb] [mt-musb.cc(612)] mt-musb: bus reset, high speed
+[00001.677] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.677] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.677] 07414.07798 [driver,mt-musb] [mt-musb.cc(666)] mt-musb: address 1
+[00001.688] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.688] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.689] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.689] 07414.07798 [driver,mt-musb] [mt-musb.cc(578)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.716] 07414.07699 [driver,usb_device] [usb-peripheral.cc(1565)] Configuration 1
+[00001.717] 07414.07616 [driver,mt-musb] [mt-musb.cc(1025)] mt-musb: ep 0x81 configured, type 3 maxp 16
+[00001.719] 07414.07616 [driver,mt-musb] [mt-musb.cc(1025)] mt-musb: ep 0x1 configured, type 2 maxp 512
+[00001.720] 07414.07616 [driver,mt-musb] [mt-musb.cc(1025)] mt-musb: ep 0x82 configured, type 2 maxp 512
+[00003.305] 03079.03081 [driver_manager.cm] [bootup_tracker.cc(117)] Bootup completed.
+[00003.305] 04072.07224 [driver,platform-bus] [platform-device.cc(472)] platform device timer did not match a driver/composite.
+[00003.305] 04072.07224 [driver,platform-bus] [platform-device.cc(472)] platform device memory-40000000 did not match a driver/composite.
+[00003.305] 04072.07224 [driver,platform-bus] [platform-device.cc(472)] platform device interrupt-controller-c000000 did not match a driver/composite.
+[00003.305] 04072.07224 [driver,platform-bus] [platform-device.cc(472)] platform device serial-11002000 did not match a driver/composite.
+[00010.053] 08280.08282 [klog]       p: 7414 5214.1K   2636K   11.1M         mt-musb.cm (+2 more)
+
+[exited with code 0]
