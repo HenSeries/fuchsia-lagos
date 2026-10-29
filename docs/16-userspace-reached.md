@@ -188,3 +188,34 @@ went dead.
 Expected: `lagos: heartbeat N s` appears in pinned slot 0 and keeps
 counting, the right-edge bar blinks, and the snapshot shows
 `CTLR 0x8400` with PPI 27 not active.
+
+## Attempt 24 result: timer interrupts work
+
+[Frame](img/attempt24-timer-works.jpg), [heartbeat slot over the clip](img/attempt24-heartbeat-10-20.png).
+
+- `lagos: heartbeat 10 s, online cpus mask 0xff` turns into **`heartbeat 20 s`**
+  during an 11 s video, and the right-edge bar blinks every 500 ms. The kernel
+  thread sleeps and wakes, which means **timer interrupts are delivered
+  continuously**.
+- Snapshot: `ICC_CTLR 0x8400` (EOImode cleared), `CNTV_CTL 0x1` (armed, not
+  yet fired), `ISACTIVER0 0` (nothing stuck active).
+- The `cntv27` probe line is `act 0`.
+- Userspace now gets past its timeouts: `driver_manager: Bootup completed`
+  at 3.2 s, and at 11.2 s `driver-index stopping because it is idle` /
+  `escrowed bootstrap/driver_index`. Those are idle timers firing, which never
+  happened before.
+
+**State after attempt 24:** LK → shim → physboot → Zircon on all 8 CPUs, with
+working timer, IPIs, PSCI and 2.7 GiB RAM → component_manager → drivers →
+`Bootup completed`, with a shell prompt on the framebuffer console. What's
+left is I/O. There is no input device, so the shell can't be typed into, and
+there are no USB, storage or display drivers; the console is the kernel
+painting into LK's framebuffer.
+
+### Root causes found in this phase
+
+| # | symptom | cause |
+|---|---|---|
+| 21 | secondaries die after the EL drop | MTK firmware drops the PSCI `context_id` (fixed with a per-MPIDR table) |
+| 22 | secondaries die after stage 2 | my own marker wrote through TTBR0 after it was disabled |
+| 24 | timer fires once | LK leaves `ICC_CTLR_EL1.EOImode = 1`; Zircon never wrote the register |
