@@ -125,4 +125,16 @@
 		clock-frequency = <26000000>;
 		status = "okay";
 	};
+
+	/* Attempt 32: eMMC 5.1 (MSDC0) storage controller, published by lagos-devicetree.
+	 * reg order matches stock DT: MSDC0 core (0x11230000, 64 KB), msdc0_top (0x11cd0000, 4 KB).
+	 * IRQ: SPI 100 (0x64), level high. */
+	mmc0: mmc@11230000 {
+		compatible = "mediatek,mt6768-mmc";
+		reg = <0x0 0x11230000 0x0 0x10000>,
+		      <0x0 0x11cd0000 0x0 0x00001000>;
+		interrupts = <0 0x64 4>;
+		status = "okay";
+	};
 };
+

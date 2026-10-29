@@ -11,8 +11,10 @@ device-tree/work/
 
 # build output
 /out/
+/dist/
 *.zbi
 *.vboot
+*.cpio
 
 # build logs (noise)
 *.log

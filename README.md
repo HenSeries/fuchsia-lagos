@@ -20,7 +20,7 @@ community/history of the Fuchsia tree.
 | **Phase** | Hito 0 bring-up — **Fuchsia boots to `Bootup completed` on all 8 CPUs with working timer interrupts** ✅ (attempt 24; [docs/16](docs/16-userspace-reached.md)) |
 | **Target SoC** | MediaTek **MT6768** (basis of "Helio G81") |
 | **Device** | Motorola Moto G06 `lagos` (XT2535-1), bootloader unlocked, A/B slots |
-| **Next milestone** | storage (eMMC/UFS) or display; the board is now a real devicetree board (`lagos-devicetree`, [docs/19](docs/19-lagos-devicetree-board.md)), so new drivers just need a DTB node |
+| **Next milestone** | storage (eMMC 5.1 MSDC0): driver scaffolded (`mtk-sdmmc`, [docs/20](docs/20-storage-msdc-bringup.md)) matching devicetree node mmc0 |
 | **Output channel** | **USB**: the phone enumerates as a CDC-Ethernet device (own MUSB driver, attempt 27) and the host streams logs with `loglistener` ([docs/17](docs/17-usb-peripheral.md)). Framebuffer text console as fallback ([docs/15](docs/15-framebuffer-console.md)) |
 
 ## The milestone ladder
@@ -29,7 +29,7 @@ community/history of the Fuchsia tree.
 |---|---|---|
 | **0** | Zircon boots the `bringup` product → **serial console / shell over UART** | 🟡 Achievable (weeks). *The real "we did it".* |
 | **1** | Display + touch → minimal graphical UI | 🟠 Very hard (months). Mali-G52 helps (see below). |
-| **2** | Storage / USB / WiFi | 🔴 Unlikely |
+| **2** | Storage / USB / WiFi | 🟡 In progress (USB works; eMMC driver scaffolded) |
 | **3** | Modem / calls / radio | ⛔ Effectively never (proprietary baseband) |
 
 ## Why Hito 0 is feasible
@@ -65,14 +65,25 @@ docs/
   12-attempt7-framebuffer-printf.md  Colour paints as a UART-free printf (attempts 7-9)
   13-attempt10-blue-shim-works.md    DTB-overlap bug; shim runs; embed:zbi needs a cpio; GRAY
   14-zircon-kernel-runs.md           Zircon kernel runs; kernel progress bands + heartbeat
+  15-framebuffer-console.md          Framebuffer text console on screen (attempts 15-18)
+  16-userspace-reached.md            Userspace shell prompt + all 8 CPUs online (attempts 21-24)
+  17-usb-peripheral.md               CDC-Ethernet USB device mode (mt-musb driver, attempt 27)
+  18-remote-shell.md                 Interactive remote shell over USB (`tools/lagos-sh`, attempt 28)
+  19-lagos-devicetree-board.md       Devicetree board driver (`lagos-devicetree`, attempts 30-31)
+  20-storage-msdc-bringup.md         MediaTek MSDC0 eMMC storage controller bring-up (attempt 32)
 patches/                  Local patches to the Fuchsia checkout (git apply)
 device-tree/
   dts/vendor_boot-fdt0.dts   Decompiled device tree (6277 lines) — the main artifact
   raw/vendor_boot-fdt0.dtb   Carved FDT blob
   vendor_boot-header.txt     vendor_boot.img header (load addresses etc.)
+  lagos/lagos-min.dts        Minimal devicetree fed to the boot-shim (DTB v9)
 tools/
   extract-device-tree.sh     Regenerate the device tree from stock firmware
-research/                     Notes / links from Fuchsia docs & source
+  build-boot-img.sh          Assemble kernel, shim, DTB, and ZBI into boot image
+  flash-lagos-fuchsia.sh     Fastboot flash script for slot B
+  lagos-sh                   Host CLI for USB remote shell
+reference/                   Driver references (U-Boot mtk-sd.c, mt8167-musb)
+research/                    Notes / links from Fuchsia docs & source
 ```
 
 Large firmware images are **not** committed (see `.gitignore`); regenerate them from the

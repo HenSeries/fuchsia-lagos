@@ -19,10 +19,10 @@ index 5893fc2d253..89d6854a555 100644
      },
      partitions_configuration = "//build/bazel/assembly/partitions_configurations:arm64",
 diff --git a/boards/arm64/BUILD.gn b/boards/arm64/BUILD.gn
-index 769b13237a2..d71e0b154ad 100644
+index 769b13237a2..814c4e058dd 100644
 --- a/boards/arm64/BUILD.gn
 +++ b/boards/arm64/BUILD.gn
-@@ -57,15 +57,22 @@ board_input_bundle("main_bundle") {
+@@ -57,15 +57,30 @@ board_input_bundle("main_bundle") {
        package_set = "bootfs"
        driver_components = [ "meta/ahci.cm" ]
      },
@@ -30,22 +30,30 @@ index 769b13237a2..d71e0b154ad 100644
 +    # [fuchsia-lagos] qemu-arm64 and pl031-rtc removed: on the Moto G06 they
 +    # touched QEMU's PCI ECAM and PL031 addresses. The lagos board driver
 +    # publishes the devicetree instead. See fuchsia-lagos/docs/19.
-     {
--      package_target = "//src/devices/board/drivers/qemu-arm64:package"
++    {
 +      package_target = "//src/devices/board/drivers/lagos-devicetree:package"
-       package_set = "bootfs"
--      driver_components = [ "meta/qemu-arm64.cm" ]
++      package_set = "bootfs"
 +      driver_components = [ "meta/lagos-devicetree.cm" ]
-     },
++    },
 +
 +    # [fuchsia-lagos] MediaTek MUSB USB device controller (Moto G06 / MT6768),
 +    # bound by `compatible` from the lagos devicetree. See fuchsia-lagos/docs/17.
      {
--      package_target = "//src/devices/rtc/drivers/pl031-rtc:package"
+-      package_target = "//src/devices/board/drivers/qemu-arm64:package"
 +      package_target = "//src/devices/usb/drivers/mt-musb:package"
        package_set = "bootfs"
--      driver_components = [ "meta/pl031-rtc.cm" ]
+-      driver_components = [ "meta/qemu-arm64.cm" ]
 +      driver_components = [ "meta/mt-musb.cm" ]
+     },
++
++    # [fuchsia-lagos] MediaTek MSDC eMMC storage controller (Moto G06 / MT6768),
++    # bound by `compatible` from the lagos devicetree. See fuchsia-lagos/docs/20.
+     {
+-      package_target = "//src/devices/rtc/drivers/pl031-rtc:package"
++      package_target = "//src/devices/block/drivers/mtk-sdmmc:package"
+       package_set = "bootfs"
+-      driver_components = [ "meta/pl031-rtc.cm" ]
++      driver_components = [ "meta/mtk-sdmmc.cm" ]
      },
    ]
    version = build_info_version
@@ -76,10 +84,18 @@ index 120a67039ad..1521ed75e11 100644
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
 diff --git a/build/drivers/all_drivers_list.txt b/build/drivers/all_drivers_list.txt
-index 8b93091f080..94a5df26f11 100644
+index 8b93091f080..d9cdbee1d0e 100644
 --- a/build/drivers/all_drivers_list.txt
 +++ b/build/drivers/all_drivers_list.txt
-@@ -108,6 +108,7 @@
+@@ -94,6 +94,7 @@
+ //src/devices/block/drivers/cqhci:driver
+ //src/devices/block/drivers/ftl:ftl-driver
+ //src/devices/block/drivers/nvme:nvme-driver
++//src/devices/block/drivers/mtk-sdmmc:mtk-sdmmc-driver
+ //src/devices/block/drivers/pci-sdhci:pci-sdhci-driver
+ //src/devices/block/drivers/ramdisk:ramdisk-driver
+ //src/devices/block/drivers/sdhci:sdhci-driver
+@@ -108,6 +109,7 @@
  //src/devices/board/drivers/astro:astro-driver
  //src/devices/board/drivers/crosvm:driver
  //src/devices/board/drivers/integration-test:integration-test-driver
@@ -87,7 +103,7 @@ index 8b93091f080..94a5df26f11 100644
  //src/devices/board/drivers/nelson/post-init:post-init-driver
  //src/devices/board/drivers/nelson:nelson-module-driver
  //src/devices/board/drivers/qemu-arm64:qemu-arm64-driver
-@@ -314,6 +315,7 @@
+@@ -314,6 +316,7 @@
  //src/devices/tpm/drivers/tpm:fuchsia_driver
  //src/devices/usb/drivers/dwc2:dwc2-driver
  //src/devices/usb/drivers/dwc3:dwc3-driver
@@ -177,6 +193,817 @@ index 00000000000..d766c7e61cb
 +extend uint fuchsia.BIND_PLATFORM_DEV_DID {
 +  MUSB_PERIPHERAL = 0x01,
 +};
+diff --git a/src/devices/block/drivers/mtk-sdmmc/BUILD.gn b/src/devices/block/drivers/mtk-sdmmc/BUILD.gn
+new file mode 100644
+index 00000000000..604931f2bde
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/BUILD.gn
+@@ -0,0 +1,60 @@
++# Copyright 2026 The Fuchsia Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/bind/bind.gni")
++import("//build/drivers.gni")
++
++# [fuchsia-lagos] MediaTek MSDC eMMC 5.1 / SD storage controller (MT6768 / Moto G06).
++
++fuchsia_driver_dml("mtk-sdmmc-dml") {
++  dml = "meta/mtk-sdmmc.dml"
++  driver_name = "mtk-sdmmc"
++}
++
++driver_bind_rules("mtk-sdmmc-bind") {
++  dml_label = ":mtk-sdmmc-dml"
++  bind_output = "mtk-sdmmc.bindbc"
++  deps = [
++    "//src/devices/bind/fuchsia",
++    "//src/devices/bind/fuchsia.platform",
++  ]
++}
++
++fuchsia_cc_driver("mtk-sdmmc-driver") {
++  output_name = "mtk-sdmmc"
++  configs += [ "//build/config:all_source" ]
++  sources = [
++    "mtk-sdmmc.cc",
++    "mtk-sdmmc.h",
++  ]
++  deps = [
++    ":mtk-sdmmc-bind",
++    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
++    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
++    "//sdk/fidl/fuchsia.hardware.sdmmc:fuchsia.hardware.sdmmc_cpp",
++    "//sdk/lib/async:async-cpp",
++    "//sdk/lib/driver/component/cpp",
++    "//sdk/lib/driver/logging/cpp",
++    "//sdk/lib/driver/mmio/cpp",
++    "//sdk/lib/driver/platform-device/cpp",
++    "//src/devices/bind/fuchsia:fuchsia_cpp",
++    "//src/devices/block/lib/sdmmc",
++    "//src/devices/lib/driver:driver_runtime",
++    "//zircon/system/ulib/sync:sync-cpp",
++    "//zircon/system/ulib/zx",
++  ]
++}
++
++fuchsia_driver_component("mtk-sdmmc") {
++  dml_label = ":mtk-sdmmc-dml"
++  info = "meta/mtk-sdmmc-info.json"
++  component_name = "mtk-sdmmc"
++  deps = [ ":mtk-sdmmc-driver" ]
++}
++
++fuchsia_driver_package("package") {
++  package_name = "mtk-sdmmc"
++  export_to_bazel = true
++  driver_components = [ ":mtk-sdmmc" ]
++}
+diff --git a/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc-info.json b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc-info.json
+new file mode 100644
+index 00000000000..e46f068255c
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc-info.json
+@@ -0,0 +1,9 @@
++{
++    "short_description": "MediaTek MT6768 SD/MMC host controller (MSDC), PIO",
++    "manufacturer": "MediaTek",
++    "families": [],
++    "models": [],
++    "areas": [
++        "Storage"
++    ]
++}
+diff --git a/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.bind b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.bind
+new file mode 100644
+index 00000000000..d79540a75a9
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.bind
+@@ -0,0 +1,11 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++composite mtk_sdmmc;
++
++using fuchsia;
++
++primary parent "pdev" {
++  fuchsia.COMPATIBLE == "mediatek,mt6768-mmc";
++}
+diff --git a/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.cml b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.cml
+new file mode 100644
+index 00000000000..ffca7def57f
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.cml
+@@ -0,0 +1,28 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++{
++    include: [
++        "driver_component/driver.shard.cml",
++        "inspect/client.shard.cml",
++        "syslog/client.shard.cml",
++    ],
++    program: {
++        runner: "driver",
++        binary: "driver/mtk-sdmmc.so",
++        default_dispatcher_opts: [ "allow_sync_calls" ],
++        bind: "meta/bind/mtk-sdmmc.bindbc",
++    },
++    capabilities: [
++        { service: "fuchsia.hardware.sdmmc.SdmmcService" },
++    ],
++    use: [
++        { service: "fuchsia.hardware.platform.device.Service" },
++    ],
++    expose: [
++        {
++            service: "fuchsia.hardware.sdmmc.SdmmcService",
++            from: "self",
++        },
++    ],
++}
+diff --git a/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.dml b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.dml
+new file mode 100644
+index 00000000000..b4eb173bc77
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/meta/mtk-sdmmc.dml
+@@ -0,0 +1,33 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++{
++    name: "mtk-sdmmc",
++    include: [ "driver_component/driver.shard.cml" ],
++    program: {
++        default_dispatcher_opts: [ "allow_sync_calls" ],
++    },
++    capabilities: [
++        { service: "fuchsia.hardware.sdmmc.SdmmcService" },
++    ],
++    use: [
++        {
++            // The lagos-devicetree board publishes every devicetree node as a
++            // composite node spec whose primary parent is the platform device.
++            name: "pdev",
++            service: "fuchsia.hardware.platform.device.Service",
++            primary: true,
++            bind: {
++                one_of: [
++                    { compat: "mediatek,mt6768-mmc" },
++                ],
++            },
++        },
++    ],
++    expose: [
++        {
++            service: "fuchsia.hardware.sdmmc.SdmmcService",
++            from: "self",
++        },
++    ],
++}
+diff --git a/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.cc b/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.cc
+new file mode 100644
+index 00000000000..251e57e44ee
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.cc
+@@ -0,0 +1,477 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.h"
++
++#include <lib/driver/component/cpp/driver_export2.h>
++#include <lib/driver/component/cpp/node_add_args.h>
++#include <lib/driver/logging/cpp/logger.h>
++#include <lib/sdmmc/hw.h>
++#include <lib/zx/time.h>
++#include <lib/zx/vmar.h>
++#include <zircon/status.h>
++
++#include <algorithm>
++#include <cstring>
++
++#include <bind/fuchsia/cpp/bind.h>
++
++namespace mtk_sdmmc {
++
++namespace {
++
++constexpr uint32_t kBaseClock = 200000000;  // 200 MHz MSDC source clock
++
++uint32_t FindRespType(uint32_t cmd_flags) {
++  if (cmd_flags & SDMMC_RESP_LEN_136) {
++    return 2;  // R2 (136-bit response)
++  }
++  if (cmd_flags & SDMMC_RESP_LEN_48B) {
++    return 7;  // R1b (48-bit with busy)
++  }
++  if (cmd_flags & SDMMC_RESP_LEN_48) {
++    return 1;  // R1 / R3 / R6 / R7 (48-bit response)
++  }
++  return 0;  // No response
++}
++
++}  // namespace
++
++zx::result<> MtkSdmmc::Start(fdf::DriverContext context) {
++  zx::result pdev = incoming()->Connect<fuchsia_hardware_platform_device::Service::Device>("pdev");
++  if (pdev.is_error() || !pdev->is_valid()) {
++    fdf::error("mtk-sdmmc: failed to connect to platform device: {}", pdev);
++    return pdev.take_error();
++  }
++
++  fdf::PDev client(std::move(pdev.value()));
++
++  // Map MMIO 0: MSDC core registers (0x11230000, 64 KB).
++  zx::result msdc_mmio = client.MapMmio(0);
++  if (msdc_mmio.is_error()) {
++    fdf::error("mtk-sdmmc: failed to map MSDC core MMIO: {}", msdc_mmio);
++    return msdc_mmio.take_error();
++  }
++  msdc_mmio_ = std::move(*msdc_mmio);
++
++  // Map MMIO 1: MSDC top registers (0x11cd0000, 4 KB).
++  zx::result top_mmio = client.MapMmio(1);
++  if (top_mmio.is_ok()) {
++    top_mmio_ = std::move(*top_mmio);
++  } else {
++    fdf::warn("mtk-sdmmc: top MMIO not present or failed to map (continuing)");
++  }
++
++  // Get physical interrupt (SPI 100 = GIC 132).
++  zx::result irq = client.GetInterrupt(0);
++  if (irq.is_ok()) {
++    irq_ = std::move(*irq);
++  }
++
++  // Reset HW controller and flush FIFO.
++  ResetHw();
++  FifoClear();
++
++  fdf::info("mtk-sdmmc: MSDC0 controller mapped at 0x11230000; CFG {:#x} SDC_CFG {:#x}",
++            msdc().Read32(kMsdcCfg), msdc().Read32(kSdcCfg));
++
++  auto handler = [this](fdf::ServerEnd<fsdmmc::Sdmmc> request) {
++    bindings_.AddBinding(driver_dispatcher()->get(), std::move(request), this,
++                         fidl::kIgnoreBindingClosure);
++  };
++
++  zx::result result = outgoing()->AddService<fsdmmc::SdmmcService>(
++      fsdmmc::SdmmcService::InstanceHandler({.sdmmc = std::move(handler)}));
++  if (result.is_error()) {
++    fdf::error("mtk-sdmmc: failed to add SdmmcService: {}", result);
++    return result.take_error();
++  }
++
++  // Offer SdmmcService on a child node so core sdmmc driver binds to it.
++  std::vector props = {
++      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.sdmmc.SdmmcService"),
++  };
++  std::vector offers = {fdf::MakeOffer2<fsdmmc::SdmmcService>()};
++
++  zx::result child = AddChild("mtk-sdmmc-sdmmc", props, offers);
++  if (child.is_error()) {
++    fdf::error("mtk-sdmmc: failed to add child node: {}", child);
++    return child.take_error();
++  }
++  child_.Bind(std::move(*child));
++
++  fdf::info("mtk-sdmmc: started and published mtk-sdmmc-sdmmc node");
++  return zx::ok();
++}
++
++void MtkSdmmc::Stop(fdf::StopCompleter completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  if (irq_.is_valid()) {
++    irq_.destroy();
++  }
++  completer(zx::ok());
++}
++
++void MtkSdmmc::ResetHw() {
++  msdc().SetBits32(kMsdcCfgRst, kMsdcCfg);
++  for (int i = 0; i < 1000; i++) {
++    if (!(msdc().Read32(kMsdcCfg) & kMsdcCfgRst)) {
++      break;
++    }
++    zx::nanosleep(zx::deadline_after(zx::usec(10)));
++  }
++}
++
++void MtkSdmmc::FifoClear() {
++  msdc().SetBits32(kMsdcFifocsClr, kMsdcFifocs);
++  for (int i = 0; i < 1000; i++) {
++    if (!(msdc().Read32(kMsdcFifocs) & kMsdcFifocsClr)) {
++      break;
++    }
++    zx::nanosleep(zx::deadline_after(zx::usec(10)));
++  }
++}
++
++bool MtkSdmmc::WaitForCmdReady() {
++  for (int i = 0; i < 2000; i++) {
++    if (!(msdc().Read32(kSdcSts) & kSdcStsCmdBusy)) {
++      return true;
++    }
++    zx::nanosleep(zx::deadline_after(zx::usec(10)));
++  }
++  fdf::warn("mtk-sdmmc: CMD bus busy detected; resetting controller");
++  ResetHw();
++  return false;
++}
++
++zx_status_t MtkSdmmc::SendCommand(uint32_t cmd_idx, uint32_t arg, uint32_t cmd_flags,
++                                  uint32_t blocksize, uint32_t blocks,
++                                  std::array<uint32_t, 4>& out_resp) {
++  if (!WaitForCmdReady()) {
++    return ZX_ERR_TIMED_OUT;
++  }
++
++  // Clear pending interrupts
++  msdc().Write32(msdc().Read32(kMsdcInt), kMsdcInt);
++
++  uint32_t resp_type = FindRespType(cmd_flags);
++  uint32_t dtype = 0;
++  uint32_t rawcmd = (cmd_idx & 0x3f) | ((resp_type & 0x7) << 7);
++
++  if (cmd_flags & SDMMC_RESP_DATA_PRESENT) {
++    if (!(cmd_flags & SDMMC_CMD_READ)) {
++      rawcmd |= (1u << 13);  // SDC_CMD_WR (write direction)
++    }
++    dtype = (blocks > 1) ? 2 : 1;
++    rawcmd |= ((blocksize & 0xfff) << 16) | ((dtype & 0x3) << 11);
++  }
++
++  if (cmd_idx == 12) {  // STOP_TRANSMISSION
++    rawcmd |= (1u << 14);
++  }
++
++  msdc().Write32(blocks, kSdcBlkNum);
++  msdc().Write32(arg, kSdcArg);
++  msdc().Write32(rawcmd, kSdcCmd);
++
++  // Poll for command completion or error
++  uint32_t status = 0;
++  for (int i = 0; i < 10000; i++) {
++    status = msdc().Read32(kMsdcInt);
++    if (status & kCmdIntsMask) {
++      break;
++    }
++    zx::nanosleep(zx::deadline_after(zx::usec(10)));
++  }
++
++  // Clear CMD interrupt flags
++  msdc().Write32(status & kCmdIntsMask, kMsdcInt);
++
++  if (status & kMsdcIntCmdTmo) {
++    return ZX_ERR_TIMED_OUT;
++  }
++  if (status & kMsdcIntRspCrcErr) {
++    return ZX_ERR_IO_DATA_INTEGRITY;
++  }
++  if (!(status & kMsdcIntCmdRdy)) {
++    return ZX_ERR_IO;
++  }
++
++  // Read response
++  if (resp_type == 2) {
++    // 136-bit response (R2)
++    out_resp[0] = msdc().Read32(kSdcResp3);
++    out_resp[1] = msdc().Read32(kSdcResp2);
++    out_resp[2] = msdc().Read32(kSdcResp1);
++    out_resp[3] = msdc().Read32(kSdcResp0);
++  } else if (resp_type != 0) {
++    out_resp[0] = msdc().Read32(kSdcResp0);
++    out_resp[1] = 0;
++    out_resp[2] = 0;
++    out_resp[3] = 0;
++  }
++
++  return ZX_OK;
++}
++
++zx_status_t MtkSdmmc::PioRead(uint8_t* dest, size_t size) {
++  while (size > 0) {
++    uint32_t status = msdc().Read32(kMsdcInt);
++    msdc().Write32(status & kDataIntsMask, kMsdcInt);
++
++    if (status & kMsdcIntDatCrcErr) {
++      return ZX_ERR_IO_DATA_INTEGRITY;
++    }
++    if (status & kMsdcIntDatTmo) {
++      return ZX_ERR_TIMED_OUT;
++    }
++
++    uint32_t rx_cnt = msdc().Read32(kMsdcFifocs) & kMsdcFifocsRxcntMask;
++    uint32_t chunk = std::min(size, static_cast<size_t>(rx_cnt));
++
++    for (uint32_t i = 0; i < chunk; i++) {
++      *dest++ = static_cast<uint8_t>(msdc().Read8(kMsdcRxdata));
++    }
++    size -= chunk;
++
++    if (status & kMsdcIntXferCompl) {
++      if (size > 0) {
++        fdf::error("mtk-sdmmc: XFER_COMPL before FIFO drained (remaining {})", size);
++        return ZX_ERR_IO;
++      }
++      break;
++    }
++    if (chunk == 0) {
++      zx::nanosleep(zx::deadline_after(zx::usec(10)));
++    }
++  }
++  return ZX_OK;
++}
++
++zx_status_t MtkSdmmc::PioWrite(const uint8_t* src, size_t size) {
++  while (size > 0) {
++    uint32_t status = msdc().Read32(kMsdcInt);
++    msdc().Write32(status & kDataIntsMask, kMsdcInt);
++
++    if (status & kMsdcIntDatCrcErr) {
++      return ZX_ERR_IO_DATA_INTEGRITY;
++    }
++    if (status & kMsdcIntDatTmo) {
++      return ZX_ERR_TIMED_OUT;
++    }
++
++    uint32_t tx_cnt = (msdc().Read32(kMsdcFifocs) & kMsdcFifocsTxcntMask) >> kMsdcFifocsTxcntShift;
++    uint32_t avail = (kFifoSize > tx_cnt) ? (kFifoSize - tx_cnt) : 0;
++    uint32_t chunk = std::min(size, static_cast<size_t>(avail));
++
++    for (uint32_t i = 0; i < chunk; i++) {
++      msdc().Write8(*src++, kMsdcTxdata);
++    }
++    size -= chunk;
++
++    if (status & kMsdcIntXferCompl) {
++      break;
++    }
++    if (chunk == 0) {
++      zx::nanosleep(zx::deadline_after(zx::usec(10)));
++    }
++  }
++  return ZX_OK;
++}
++
++void MtkSdmmc::HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) {
++  fsdmmc::wire::SdmmcHostInfo info = {
++      .caps = fsdmmc::SdmmcHostCap::kBusWidth8 | fsdmmc::SdmmcHostCap::kVoltage330,
++      .max_transfer_size = fsdmmc::wire::kMaxTransferUnbounded,
++      .max_buffer_regions = 1,
++  };
++  completer.buffer(arena).ReplySuccess(info);
++}
++
++void MtkSdmmc::SetSignalVoltage(fsdmmc::wire::SdmmcSetSignalVoltageRequest* request,
++                                fdf::Arena& arena,
++                                SetSignalVoltageCompleter::Sync& completer) {
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::SetBusWidth(fsdmmc::wire::SdmmcSetBusWidthRequest* request, fdf::Arena& arena,
++                           SetBusWidthCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  bus_width_ = request->bus_width;
++
++  uint32_t width_val = 0;  // 1-bit
++  if (bus_width_ == fsdmmc::wire::SdmmcBusWidth::kFour) {
++    width_val = 1;
++  } else if (bus_width_ == fsdmmc::wire::SdmmcBusWidth::kEight) {
++    width_val = 2;
++  }
++
++  uint32_t cfg = msdc().Read32(kSdcCfg);
++  cfg = (cfg & ~(0x3u << 16)) | (width_val << 16);
++  msdc().Write32(cfg, kSdcCfg);
++
++  fdf::info("mtk-sdmmc: bus width set to {}", static_cast<uint32_t>(bus_width_));
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::SetBusFreq(fsdmmc::wire::SdmmcSetBusFreqRequest* request, fdf::Arena& arena,
++                          SetBusFreqCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  bus_freq_ = request->bus_freq;
++
++  if (bus_freq_ == 0) {
++    msdc().SetBits32(kMsdcCfgCkpdn, kMsdcCfg);
++    completer.buffer(arena).ReplySuccess();
++    return;
++  }
++
++  // Calculate clock divider: bus_clk = base_clk / (2 * ckdiv)
++  uint32_t div = (kBaseClock + 2 * bus_freq_ - 1) / (2 * bus_freq_);
++  if (div == 0) div = 1;
++  if (div > 0xff) div = 0xff;
++
++  uint32_t cfg = msdc().Read32(kMsdcCfg);
++  cfg &= ~(kMsdcCfgCkpdn | (0xffu << 8));
++  cfg |= (div << 8);
++  msdc().Write32(cfg, kMsdcCfg);
++
++  fdf::info("mtk-sdmmc: bus frequency set to {} Hz (ckdiv {})", bus_freq_, div);
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::SetTiming(fsdmmc::wire::SdmmcSetTimingRequest* request, fdf::Arena& arena,
++                         SetTimingCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  timing_ = request->timing;
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  ResetHw();
++  FifoClear();
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::PerformTuning(fsdmmc::wire::SdmmcPerformTuningRequest* request, fdf::Arena& arena,
++                             PerformTuningCompleter::Sync& completer) {
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::RegisterInBandInterrupt(
++    fsdmmc::wire::SdmmcRegisterInBandInterruptRequest* request, fdf::Arena& arena,
++    RegisterInBandInterruptCompleter::Sync& completer) {
++  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
++}
++
++void MtkSdmmc::AckInBandInterrupt(fdf::Arena& arena,
++                                  AckInBandInterruptCompleter::Sync& completer) {}
++
++void MtkSdmmc::RegisterVmo(fsdmmc::wire::SdmmcRegisterVmoRequest* request, fdf::Arena& arena,
++                           RegisterVmoCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  uintptr_t vaddr = 0;
++  zx_status_t status = zx::vmar::root_self()->map(
++      ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, request->vmo, request->offset, request->size, &vaddr);
++  if (status != ZX_OK) {
++    fdf::error("mtk-sdmmc: failed to map registered VMO: {}", zx_status_get_string(status));
++    completer.buffer(arena).ReplyError(status);
++    return;
++  }
++
++  vmos_[request->client_id][request->vmo_id] = RegisteredVmo{
++      .vmo = std::move(request->vmo),
++      .vaddr = vaddr,
++      .size = request->size,
++  };
++  completer.buffer(arena).ReplySuccess();
++}
++
++void MtkSdmmc::UnregisterVmo(fsdmmc::wire::SdmmcUnregisterVmoRequest* request, fdf::Arena& arena,
++                             UnregisterVmoCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  auto client_it = vmos_.find(request->client_id);
++  if (client_it == vmos_.end()) {
++    completer.buffer(arena).ReplyError(ZX_ERR_NOT_FOUND);
++    return;
++  }
++  auto vmo_it = client_it->second.find(request->vmo_id);
++  if (vmo_it == client_it->second.end()) {
++    completer.buffer(arena).ReplyError(ZX_ERR_NOT_FOUND);
++    return;
++  }
++
++  RegisteredVmo reg = std::move(vmo_it->second);
++  client_it->second.erase(vmo_it);
++
++  if (reg.vaddr != 0) {
++    zx::vmar::root_self()->unmap(reg.vaddr, reg.size);
++  }
++  completer.buffer(arena).ReplySuccess(std::move(reg.vmo));
++}
++
++void MtkSdmmc::Request(fsdmmc::wire::SdmmcRequestRequest* request, fdf::Arena& arena,
++                       RequestCompleter::Sync& completer) {
++  std::lock_guard<std::mutex> lock(lock_);
++  std::array<uint32_t, 4> response = {};
++
++  for (const auto& req : request->reqs) {
++    uint32_t blocks = 0;
++    uint8_t* buf_ptr = nullptr;
++    size_t total_size = 0;
++
++    if (!req.buffers.empty()) {
++      const auto& region = req.buffers[0];
++      total_size = region.size;
++      blocks = static_cast<uint32_t>(req.blocksize ? (total_size / req.blocksize) : 1);
++
++      if (region.buffer.is_vmo_id()) {
++        auto client_it = vmos_.find(req.client_id);
++        if (client_it != vmos_.end()) {
++          auto vmo_it = client_it->second.find(region.buffer.vmo_id());
++          if (vmo_it != client_it->second.end()) {
++            buf_ptr = reinterpret_cast<uint8_t*>(vmo_it->second.vaddr + region.offset);
++          }
++        }
++      }
++    }
++
++    zx_status_t status =
++        SendCommand(req.cmd_idx, req.arg, req.cmd_flags, req.blocksize, blocks, response);
++    if (status != ZX_OK) {
++      if (!req.suppress_error_messages) {
++        fdf::error("mtk-sdmmc: CMD{} arg {:#x} failed: {}", req.cmd_idx, req.arg,
++                   zx_status_get_string(status));
++      }
++      completer.buffer(arena).ReplyError(status);
++      return;
++    }
++
++    if (buf_ptr && total_size > 0) {
++      if (req.cmd_flags & SDMMC_CMD_READ) {
++        status = PioRead(buf_ptr, total_size);
++      } else {
++        status = PioWrite(buf_ptr, total_size);
++      }
++      if (status != ZX_OK) {
++        fdf::error("mtk-sdmmc: PIO transfer for CMD{} failed: {}", req.cmd_idx,
++                   zx_status_get_string(status));
++        completer.buffer(arena).ReplyError(status);
++        return;
++      }
++    }
++  }
++
++  fidl::Array<uint32_t, 4> fidl_resp = {response[0], response[1], response[2], response[3]};
++  completer.buffer(arena).ReplySuccess(fidl_resp);
++}
++
++void MtkSdmmc::Init(fsdmmc::wire::CqhciInitRequest* request, fdf::Arena& arena,
++                    InitCompleter::Sync& completer) {
++  completer.buffer(arena).ReplyError(ZX_ERR_NOT_SUPPORTED);
++}
++
++}  // namespace mtk_sdmmc
++
++FUCHSIA_DRIVER_EXPORT2(mtk_sdmmc::MtkSdmmc);
+diff --git a/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.h b/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.h
+new file mode 100644
+index 00000000000..1cdcc78e9d6
+--- /dev/null
++++ b/src/devices/block/drivers/mtk-sdmmc/mtk-sdmmc.h
+@@ -0,0 +1,151 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SRC_DEVICES_BLOCK_DRIVERS_MTK_SDMMC_MTK_SDMMC_H_
++#define SRC_DEVICES_BLOCK_DRIVERS_MTK_SDMMC_MTK_SDMMC_H_
++
++// [fuchsia-lagos] MediaTek MSDC eMMC 5.1 / SD storage controller for MT6768
++// (Moto G06 "lagos"). Programmed I/O (PIO) implementation for early bring-up
++// and storage discovery; see fuchsia-lagos/docs/20.
++
++#include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
++#include <fidl/fuchsia.hardware.sdmmc/cpp/driver/fidl.h>
++#include <lib/driver/component/cpp/driver_base2.h>
++#include <lib/driver/mmio/cpp/mmio.h>
++#include <lib/driver/platform-device/cpp/pdev.h>
++#include <lib/fdf/cpp/dispatcher.h>
++#include <lib/sync/cpp/completion.h>
++#include <lib/zx/interrupt.h>
++#include <lib/zx/vmo.h>
++
++#include <map>
++#include <mutex>
++#include <optional>
++
++namespace mtk_sdmmc {
++
++namespace fsdmmc = fuchsia_hardware_sdmmc;
++
++// Register offsets (MSDC core, MMIO 0 = 0x11230000).
++constexpr uint32_t kMsdcCfg = 0x00;
++constexpr uint32_t kMsdcIocon = 0x04;
++constexpr uint32_t kMsdcPs = 0x08;
++constexpr uint32_t kMsdcInt = 0x0c;
++constexpr uint32_t kMsdcInten = 0x10;
++constexpr uint32_t kMsdcFifocs = 0x14;
++constexpr uint32_t kMsdcTxdata = 0x18;
++constexpr uint32_t kMsdcRxdata = 0x1c;
++
++constexpr uint32_t kSdcCfg = 0x30;
++constexpr uint32_t kSdcCmd = 0x34;
++constexpr uint32_t kSdcArg = 0x38;
++constexpr uint32_t kSdcSts = 0x3c;
++constexpr uint32_t kSdcResp0 = 0x40;
++constexpr uint32_t kSdcResp1 = 0x44;
++constexpr uint32_t kSdcResp2 = 0x48;
++constexpr uint32_t kSdcResp3 = 0x4c;
++constexpr uint32_t kSdcBlkNum = 0x50;
++
++// Register bitfields
++constexpr uint32_t kMsdcCfgRst = 1u << 2;
++constexpr uint32_t kMsdcCfgCkpdn = 1u << 1;
++
++constexpr uint32_t kMsdcFifocsClr = 1u << 31;
++constexpr uint32_t kMsdcFifocsRxcntMask = 0xff;
++constexpr uint32_t kMsdcFifocsTxcntShift = 16;
++constexpr uint32_t kMsdcFifocsTxcntMask = 0xff << 16;
++
++constexpr uint32_t kMsdcIntCmdRdy = 1u << 8;
++constexpr uint32_t kMsdcIntCmdTmo = 1u << 9;
++constexpr uint32_t kMsdcIntRspCrcErr = 1u << 10;
++constexpr uint32_t kMsdcIntXferCompl = 1u << 12;
++constexpr uint32_t kMsdcIntDatTmo = 1u << 14;
++constexpr uint32_t kMsdcIntDatCrcErr = 1u << 15;
++
++constexpr uint32_t kCmdIntsMask = kMsdcIntCmdRdy | kMsdcIntCmdTmo | kMsdcIntRspCrcErr;
++constexpr uint32_t kDataIntsMask = kMsdcIntXferCompl | kMsdcIntDatTmo | kMsdcIntDatCrcErr;
++
++constexpr uint32_t kSdcStsCmdBusy = 1u << 1;
++constexpr uint32_t kSdcStsSdcBusy = 1u << 0;
++constexpr uint32_t kMsdcPsDat0 = 1u << 16;
++
++constexpr uint32_t kFifoSize = 128;
++
++class MtkSdmmc : public fdf::DriverBase2,
++                 public fdf::WireServer<fsdmmc::Sdmmc> {
++ public:
++  MtkSdmmc() : fdf::DriverBase2("mtk-sdmmc") {}
++  ~MtkSdmmc() override = default;
++
++  zx::result<> Start(fdf::DriverContext context) override;
++  void Stop(fdf::StopCompleter completer) override;
++
++  // fuchsia.hardware.sdmmc.Sdmmc
++  void HostInfo(fdf::Arena& arena, HostInfoCompleter::Sync& completer) override;
++  void SetSignalVoltage(fsdmmc::wire::SdmmcSetSignalVoltageRequest* request, fdf::Arena& arena,
++                        SetSignalVoltageCompleter::Sync& completer) override;
++  void SetBusWidth(fsdmmc::wire::SdmmcSetBusWidthRequest* request, fdf::Arena& arena,
++                   SetBusWidthCompleter::Sync& completer) override;
++  void SetBusFreq(fsdmmc::wire::SdmmcSetBusFreqRequest* request, fdf::Arena& arena,
++                  SetBusFreqCompleter::Sync& completer) override;
++  void SetTiming(fsdmmc::wire::SdmmcSetTimingRequest* request, fdf::Arena& arena,
++                 SetTimingCompleter::Sync& completer) override;
++  void HwReset(fdf::Arena& arena, HwResetCompleter::Sync& completer) override;
++  void PerformTuning(fsdmmc::wire::SdmmcPerformTuningRequest* request, fdf::Arena& arena,
++                     PerformTuningCompleter::Sync& completer) override;
++  void RegisterInBandInterrupt(fsdmmc::wire::SdmmcRegisterInBandInterruptRequest* request,
++                               fdf::Arena& arena,
++                               RegisterInBandInterruptCompleter::Sync& completer) override;
++  void AckInBandInterrupt(fdf::Arena& arena, AckInBandInterruptCompleter::Sync& completer) override;
++  void RegisterVmo(fsdmmc::wire::SdmmcRegisterVmoRequest* request, fdf::Arena& arena,
++                   RegisterVmoCompleter::Sync& completer) override;
++  void UnregisterVmo(fsdmmc::wire::SdmmcUnregisterVmoRequest* request, fdf::Arena& arena,
++                     UnregisterVmoCompleter::Sync& completer) override;
++  void Request(fsdmmc::wire::SdmmcRequestRequest* request, fdf::Arena& arena,
++               RequestCompleter::Sync& completer) override;
++
++  // Cqhci compose methods
++  void Init(fsdmmc::wire::CqhciInitRequest* request, fdf::Arena& arena,
++            InitCompleter::Sync& completer) override;
++
++  void handle_unknown_method(fidl::UnknownMethodMetadata<fsdmmc::Sdmmc> metadata,
++                             fidl::UnknownMethodCompleter::Sync& completer) override {}
++
++ private:
++  struct RegisteredVmo {
++    zx::vmo vmo;
++    uintptr_t vaddr = 0;
++    size_t size = 0;
++  };
++
++  void ResetHw();
++  void FifoClear();
++  bool WaitForCmdReady();
++  zx_status_t SendCommand(uint32_t cmd_idx, uint32_t arg, uint32_t cmd_flags,
++                          uint32_t blocksize, uint32_t blocks,
++                          std::array<uint32_t, 4>& out_resp);
++  zx_status_t PioRead(uint8_t* dest, size_t size);
++  zx_status_t PioWrite(const uint8_t* src, size_t size);
++
++  fdf::MmioBuffer& msdc() { return *msdc_mmio_; }
++
++  std::optional<fdf::MmioBuffer> msdc_mmio_;
++  std::optional<fdf::MmioBuffer> top_mmio_;
++  zx::interrupt irq_;
++
++  fidl::WireSyncClient<fuchsia_driver_framework::NodeController> child_;
++  fdf::ServerBindingGroup<fsdmmc::Sdmmc> bindings_;
++
++  std::mutex lock_;
++  // Client ID -> VMO ID -> RegisteredVmo
++  std::map<uint8_t, std::map<uint32_t, RegisteredVmo>> vmos_ __TA_GUARDED(lock_);
++
++  uint32_t bus_freq_ = 0;
++  fsdmmc::wire::SdmmcBusWidth bus_width_ = fsdmmc::wire::SdmmcBusWidth::kOne;
++  fsdmmc::wire::SdmmcTiming timing_ = fsdmmc::wire::SdmmcTiming::kLegacy;
++};
++
++}  // namespace mtk_sdmmc
++
++#endif  // SRC_DEVICES_BLOCK_DRIVERS_MTK_SDMMC_MTK_SDMMC_H_
 diff --git a/src/devices/board/drivers/lagos-devicetree/BUILD.gn b/src/devices/board/drivers/lagos-devicetree/BUILD.gn
 new file mode 100644
 index 00000000000..8c288aba4b3
@@ -1969,7 +2796,7 @@ index 935031fc429..085a14d833d 100644
      fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.USB;
      fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.test.platform.BIND_PLATFORM_DEV_DID.VIRTUAL_DEVICE;
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..986a73bf675 100644
+index 0f622fa45ca..84baf706de5 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -2037,7 +2864,7 @@ index 0f622fa45ca..986a73bf675 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v8.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v9.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
