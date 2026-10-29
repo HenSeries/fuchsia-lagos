@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Remote shell for Fuchsia on the Moto G06 over USB (CDC-Ethernet + netsvc).
+#
+#   tools/lagos-sh 'ls /boot/bin'      # run one command, print its output
+#   tools/lagos-sh                     # interactive: one command per line
+#   tools/lagos-sh --log               # just stream the device log
+#
+# netsvc runs each command as `/boot/bin/sh -c '<cmd>'` with stdout/stderr on
+# the kernel debuglog, so this script listens to the debuglog (loglistener),
+# sends the command (netruncmd), and prints what the command wrote between a
+# start and an end marker. See docs/18.
+set -u
+
+FUCHSIA_OUT="${FUCHSIA_OUT:-$(cd "$(dirname "$0")/../../fuchsia/out/bringup.arm64-balanced" 2>/dev/null && pwd)}"
+HOST="$FUCHSIA_OUT/host_x64"
+for t in loglistener netruncmd netaddr; do
+  [ -x "$HOST/$t" ] || { echo "lagos-sh: missing $HOST/$t (build fuchsia first)" >&2; exit 1; }
+done
+
+if [ "${1:-}" = "--log" ]; then
+  exec "$HOST/loglistener"
+fi
+
+if ! timeout 10 "$HOST/netaddr" >/dev/null 2>&1; then
+  echo "lagos-sh: phone not found on USB (is Fuchsia booted and the cable connected?)" >&2
+  exit 1
+fi
+
+LOG="$(mktemp -t lagos-sh.XXXXXX)"
+"$HOST/loglistener" >"$LOG" 2>/dev/null &
+LISTENER=$!
+trap 'kill $LISTENER 2>/dev/null; rm -f "$LOG"' EXIT
+sleep 1
+
+run_one() {
+  local cmd="$1" id end deadline
+  id="$(date +%s%N)"
+  end="__LAGOS_END_${id}__"
+  "$HOST/netruncmd" : "export PATH=/boot/bin:/pkg/bin; echo __LAGOS_BEGIN_${id}__; ${cmd}; echo ${end} \$?" >/dev/null 2>&1 || {
+    echo "lagos-sh: netruncmd failed" >&2
+    return 1
+  }
+  deadline=$((SECONDS + ${LAGOS_SH_TIMEOUT:-20}))
+  while ! grep -q "$end" "$LOG"; do
+    if [ $SECONDS -ge $deadline ]; then
+      echo "lagos-sh: no end marker after ${LAGOS_SH_TIMEOUT:-20}s; raw log tail:" >&2
+      grep -E "netsvc|__LAGOS_BEGIN_${id}__" "$LOG" | tail -5 >&2
+      return 1
+    fi
+    sleep 0.2
+  done
+  # Print the command's lines, without the "[time] pid.tid [tag] " prefixes.
+  awk -v b="__LAGOS_BEGIN_${id}__" -v e="$end" '
+    index($0, b) { on = 1; next }
+    index($0, e) { split($0, a, e); rc = a[2]; gsub(/ /, "", rc); exit }
+    on { sub(/^\[[0-9.]+\] [0-9]+\.[0-9]+ (\[[^]]*\] )?/, ""); print }
+    END { if (rc != "" && rc != "0") print "(exit " rc ")" > "/dev/stderr" }
+  ' "$LOG"
+}
+
+if [ $# -gt 0 ]; then
+  run_one "$*"
+  exit $?
+fi
+
+echo "lagos-sh: connected. One command per line, Ctrl-D to quit."
+while IFS= read -r -e -p "fuchsia$ " line; do
+  [ -n "$line" ] && run_one "$line"
+done
+echo

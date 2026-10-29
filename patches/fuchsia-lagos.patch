@@ -55,6 +55,49 @@ index 8b93091f080..3f9f9497eae 100644
  //src/devices/usb/drivers/usb-bus:usb-bus-driver
  //src/devices/usb/drivers/usb-composite:usb-composite-driver
  //src/devices/usb/drivers/usb-hub:usb-hub-driver
+diff --git a/src/bringup/bin/netsvc/meta/netsvc.cml b/src/bringup/bin/netsvc/meta/netsvc.cml
+index e0215775452..a6ec953f900 100644
+--- a/src/bringup/bin/netsvc/meta/netsvc.cml
++++ b/src/bringup/bin/netsvc/meta/netsvc.cml
+@@ -40,6 +40,16 @@
+                 "fuchsia.hardware.power.statecontrol.Admin",
+                 "fuchsia.logger.Log",
+                 "fuchsia.sysinfo.SysInfo",
++
++                // [fuchsia-lagos] fdio_spawn() of /boot/bin/sh for netruncmd
++                // fails with ZX_ERR_PEER_CLOSED without it (docs/18).
++                "fuchsia.process.Launcher",
++
++                // [fuchsia-lagos] For ps/top/kstats/memgraph run through
++                // netruncmd; the spawned shell inherits netsvc's /svc.
++                "fuchsia.kernel.RootJob",
++                "fuchsia.kernel.RootJobForInspect",
++                "fuchsia.kernel.Stats",
+             ],
+         },
+         {
+diff --git a/src/bringup/bin/netsvc/meta/netsvc.shard.cml b/src/bringup/bin/netsvc/meta/netsvc.shard.cml
+index 2cd10b5b0da..1f297888867 100644
+--- a/src/bringup/bin/netsvc/meta/netsvc.shard.cml
++++ b/src/bringup/bin/netsvc/meta/netsvc.shard.cml
+@@ -73,6 +73,17 @@
+             from: "#archivist",
+             to: "#netsvc",
+         },
++        {
++            // [fuchsia-lagos] Lets netruncmd spawn /boot/bin/sh (docs/18).
++            protocol: [
++                "fuchsia.kernel.RootJob",
++                "fuchsia.kernel.RootJobForInspect",
++                "fuchsia.kernel.Stats",
++                "fuchsia.process.Launcher",
++            ],
++            from: "parent",
++            to: "#netsvc",
++        },
+         {
+             dictionary: "diagnostics",
+             from: "self",
 diff --git a/src/devices/bind/fuchsia.mediatek.platform/BUILD.gn b/src/devices/bind/fuchsia.mediatek.platform/BUILD.gn
 new file mode 100644
 index 00000000000..0581d3cca01

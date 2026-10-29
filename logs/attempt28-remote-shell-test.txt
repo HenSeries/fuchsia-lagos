@@ -1,0 +1,40 @@
+=== flasheador (intento 28, 60 min) ===
+fastboot up 22:05:40
+Sending 'boot_a' (28484 KB)                        OKAY [  0.713s]
+Writing 'boot_a'                                   OKAY [  0.535s]
+Finished. Total time: 1.265s
+Rebooting                                          OKAY [  0.000s]
+Finished. Total time: 0.050s
+rebooted at 22:05:41
+netsvc up at 22:06:04
+### lagos-sh 'echo hello from fuchsia on lagos'
+hello from fuchsia on lagos
+### lagos-sh 'ls /boot/bin | head -40'
+(exit 127)
+fdio::spawn_etc failed: failed to load executable from head: Could not open file (status=NOT_FOUND)
+zxsh: head: NOT_FOUND
+### lagos-sh 'ls /'
+d  0        0 boot
+d  1        0 dev
+d  0        0 pkg
+d  0        0 svc
+d  1        0 tmp
+### lagos-sh 'cat /boot/config/build_info/version 2>/dev/null || ls /boot/config'
+fdio::spawn_etc failed: failed to load executable from cat: Could not open file (status=NOT_FOUND)
+d  0        0 build_info
+-  0     4784 component_id_index
+-  0    40136 component_manager
+-  0        2 fshost
+d  0        0 power_manager
+d  0        0 profiles
+-  0        4 zxcrypt
+### lagos-sh 'ps 2>&1 | head -30'
+(exit 127)
+fdio::spawn_etc failed: failed to load executable from head: Could not open file (status=NOT_FOUND)
+zxsh: head: NOT_FOUND
+### lagos-sh 'k mx 2>&1 | head'
+(exit 127)
+fdio::spawn_etc failed: failed to load executable from head: Could not open file (status=NOT_FOUND)
+zxsh: head: NOT_FOUND
+
+[exited with code 0]
