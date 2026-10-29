@@ -133,3 +133,56 @@ on one name, and the UsbDciService offer pointed at itself. The host
 saw nothing past the preloader.
 
 **Attempt 27:** the child node is now `mt-musb-dci`.
+
+## Attempt 27 result: the phone is a USB device. Logs flow over the cable.
+
+[Photo](img/attempt27-usb-enumerated.jpg), [full log captured over USB](../logs/attempt27-loglistener-over-usb.txt).
+
+On the phone (pinned lines):
+
+```
+mt-musb: bus reset, high speed
+mt-musb: address 1
+usb_device: Configuration 1
+usb_cdc_function: configured = true
+mt-musb: ep 0x81 configured, type 3 maxp 16     (CDC notification, interrupt IN)
+mt-musb: ep 0x1  configured, type 2 maxp 512    (bulk OUT)
+mt-musb: ep 0x82 configured, type 2 maxp 512    (bulk IN)
+```
+
+On the host (Arch Linux):
+
+```
+$ lsusb
+Bus 007 Device 119: ID 18d1:a020 Google Inc. CDC Ethernet
+$ ip -br link
+enp8s0f4u1   UP   02:01:79:a3:48:46 <BROADCAST,MULTICAST,UP,LOWER_UP>
+$ host_x64/netaddr
+fe80::1:79fe:fea3:4847%5
+$ host_x64/loglistener        # 268 lines: the whole boot, klog + every component
+```
+
+Everything the bring-up worked toward is now wired end to end:
+
+1. My MUSB driver handles ep0 enumeration at high speed: descriptors, SET_ADDRESS
+   and SET_CONFIGURATION.
+2. usb-peripheral sets up the CDC-ECM function.
+3. The bulk endpoints carry ethernet frames both ways.
+4. netsvc answers discovery (`netaddr`) and streams the debuglog
+   (`loglistener`).
+
+**No more photographs are needed to read the logs.**
+
+`netruncmd` reaches netsvc (`[netsvc] net cmd: uname -a; ...`), but it
+can't run anything: `netsvc: cannot launch /boot/bin/sh: ZX_ERR_PEER_CLOSED`.
+In this bringup configuration netsvc has no working `fuchsia.process.Launcher`
+to start processes with. That's a product-configuration issue, not a USB one,
+and it's next.
+
+### How to read logs from the host
+
+```bash
+cd fuchsia/out/bringup.arm64-balanced/host_x64
+./netaddr          # discover the phone over the USB link
+./loglistener      # stream its log
+```

@@ -1,0 +1,268 @@
+/home/hen/Documentos/code/android/fuchsia/out/bringup.arm64-balanced/host_x64/loglistener: listening on [::]33337 for device *
+[00000.442] 01101.01109 [klog] {{{module:0:<application>:elf:923433f6c9c1d452681607cf6c212ac86681731c}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d71ed000:0x1000:load:0:r:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d71ed000:0x3c000:load:0:r:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d7229000:0xcb000:load:0:x:0x3c000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d72b8000:0xd2000:load:0:rw:0xcb000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d72bf000:0xe5000:load:0:rw:0xd2000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d72b8000:0xcc000:load:0:r:0xcb000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d71ee000:0x2000:load:0:r:0x1000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d72b8000:0xd2000:load:0:r:0xcb000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d720a000:0x21000:load:0:r:0x1d000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d71ed000:0x200000:load:0:rw:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x2f4d71ed000:0x1000:load:0:r:0x0}}}
+[00000.442] 01101.01109 [klog] {{{module:1:libzircon.so:elf:578718f7ccb7ab3d705aae02f995af805a3b4519}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e906000:0x1000:load:1:r:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e906000:0xc000:load:1:r:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e912000:0xf000:load:1:x:0xc000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e909000:0x4000:load:1:r:0x3000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e90f000:0xa000:load:1:r:0x9000}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e906000:0x0:load:1:rw:0x0}}}
+[00000.442] 01101.01109 [klog] {{{mmap:0x1cc3e906000:0x1000:load:1:r:0x0}}}
+[00000.442] 01101.01109 [klog] CMDLINE kernel.enable-debugging-syscalls=true kernel.enable-serial-syscalls=true console.shell=true kernel.enable-debugging-syscalls=true kernel.enable-serial-syscalls=true kernel.oom.behavior=jobkill kernel.schedule
+[00000.442] 01101.01109 [klog] r.enable-new-wakeup-accounting=true netsvc.all-features=true netsvc.disable=false[00000.442] 01101.01109 [klog] CMDLINE bootloader.name=linux-arm64-boot-shim kernel.bypass-debuglog=true kernel.halt-on-panic=true kernel.debug_uart_poll=true driver.usb.peripheral=cdc
+[00000.808] 01101.01109 [klog] Started child process: bin/component_manager
+[00000.808] 01101.01109 [klog] Serving loader service for child process...
+[00000.820] 01201.01204 [klog] {{{reset}}}
+[00000.820] 01201.01204 [klog] {{{module:0:<application>:elf:ec632f842fecbd89b0e501970f24e6d1f3c04d19}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x27d25a8000:0x1c1000:load:0:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x27d2769000:0x396000:load:0:x:0x1c1000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x27d2aff000:0x53000:load:0:rw:0x557000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x27d2b52000:0x1000:load:0:rw:0x5aa000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x3:libfdio.so:elf:21d38e37764be62742f0346728b07ebcac2a2f3a}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x34ba5548000:0x26000:load:0x3:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x34ba556e000:0x6e000:load:0x3:x:0x26000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x34ba55dc000:0x3000:load:0x3:rw:0x94000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x34ba55df000:0x6000:load:0x3:rw:0x97000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x4:libvfs_rust.so:elf:643dd57dad47816908dabb2ccdba7245dd751573}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x2d7fcd77000:0x1b0000:load:0x4:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x2d7fcf27000:0xe7000:load:0x4:x:0x1b0000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x2d7fd00e000:0x15000:load:0x4:rw:0x297000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x2d7fd023000:0x3000:load:0x4:rw:0x2ac000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x5:libstd-6a0f0f88abafcf25.so:elf:6c548e42fa56d627d876ad58803fbbbbce7f706d}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x6a7740c000:0x72000:load:0x5:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x6a7747e000:0x9b000:load:0x5:x:0x72000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x6a77519000:0x8000:load:0x5:rw:0x10d000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x6a77521000:0x2000:load:0x5:rw:0x115000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x2:<vDSO>:elf:578718f7ccb7ab3d705aae02f995af805a3b4519}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x83d2bb612000:0xc000:load:0x2:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x83d2bb61e000:0x3000:load:0x2:x:0xc000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x1:libc.so:elf:f656f072b52cd64f7b368ce3653ecccc57330e13}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x8314603f7000:0x66000:load:0x1:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x83146045d000:0x6b000:load:0x1:x:0x66000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x8314604c8000:0x2000:load:0x1:rw:0xd1000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x8314604ca000:0x13000:load:0x1:rw:0xd3000}}}
+[00000.820] 01201.01204 [klog] {{{module:0x6:libtrace-engine.so:elf:4786dac32ee52a7994f5e2745492382a2b2c2181}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x28b98e32000:0x5000:load:0x6:r:0}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x28b98e37000:0x7000:load:0x6:x:0x5000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x28b98e3e000:0x1000:load:0x6:rw:0xc000}}}
+[00000.820] 01201.01204 [klog] {{{mmap:0x28b98e3f000:0x1000:load:0x6:rw:0xd000}}}
+[00000.828] 01201.01204 [klog] [component_manager] INFO: Component manager is starting up...
+[00000.828] 01201.01204 [klog] [component_manager] INFO: Component manager was started with boot defaults
+[00000.863] 01201.01300 [klog] [component_manager] INFO: [BootfsSvc] Finalizing rust bootfs service.
+[00000.864] 01201.01300 [klog] [component_manager] INFO: [BootfsSvc] Bootfs is ready and is now serving /boot.
+[00000.867] 01201.01300 [klog] [component_manager] INFO: [ZBI Parser] Decommitted BOOTDATA VMO from 0 to 252000
+[00000.868] 01201.01300 [klog] [component_manager] INFO: [ZBI Parser] Decommitted BOOTDATA VMO from 253000 to 1b7d000
+[00000.919] 01201.01306 [klog] [component_manager] WARN: unsupported source found in offer aggregate: Void
+[00000.962] 01965.01967 [klog] console: starting up
+[00000.971] 02254.02772 [klog] critical-services: OOM monitoring active
+[00000.974] 01201.01300 [klog] [component_manager] INFO: [devfs] Initialized.
+[00000.976] 01201.01300 [klog] [shutdown-shim]: started with config: Config { suspend_enabled: false }
+[00000.981] 01201.01300 [klog] [component_manager] INFO: [devfs] Initialized.
+[00000.994] 02299.02301 [archivist] archivist: Entering core loop.
+[00000.999] 03071.03073 [driver_manager.cm] [main.cc(204)] Starting DriverRunner with root driver URL: fuchsia-boot:///platform-bus#meta/platform-bus.cm
+[00001.001] 03071.03073 [driver_manager.cm] [main.cc(235)] driver_manager main loop is running
+[00001.018] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///platform-bus#meta/platform-bus.cm to dev
+[00001.024] 03506.03508 [RoleManager] [src/zircon/bin/role_manager/src/config.cc(643)] Loading config. config_path=bringup.profiles
+[00001.026] 03566.03568 [driver] Disabling driver fuchsia-boot:///#meta/da7219.cm
+[00001.030] 03506.03508 [RoleManager] [src/zircon/bin/role_manager/src/config.cc(643)] Loading config. config_path=bringup.profiles
+[00001.032] 03506.03508 [role_manager] [main.cc(59)] Starting role manager
+
+[00001.033] 03566.03568 [driver] Found driver: fuchsia-boot:///adc#meta/adc.cm
+[00001.035] 03566.03568 [driver] Found driver: fuchsia-boot:///ahci#meta/ahci.cm
+[00001.035] 02268.02272 [sysmem] [sysmem.cc(547)] sysmem-config - format_costs.size(): 0
+[00001.035] 01201.01306 [sysmem] metrics_buffer SetServiceDirectory is called
+[00001.035] 01201.01306 [sysmem] metrics_buffer Creating new cobalt_logger
+[00001.036] 01201.01300 [sysmem] protocol `fuchsia.feedback.ComponentDataRegister` was not available for target `sysmem`:
+	source capability at component . is void. If the offer/expose declaration has `source_availability` set to `unknown`, the source component instance likely isn't defined in the component declaration
+	For more, run `ffx component doctor`
+[00001.036] 01201.01306 [sysmem] protocol `fuchsia.metrics.MetricEventLoggerFactory` was not available for target `sysmem`:
+	source capability at component . is void. If the offer/expose declaration has `source_availability` set to `unknown`, the source component instance likely isn't defined in the component declaration
+	For more, run `ffx component doctor`
+[00001.037] 03566.03568 [driver] Found driver: fuchsia-boot:///asix-88179#meta/asix-88179.cm
+[00001.038] 03566.03568 [driver] Found driver: fuchsia-boot:///asix-88772b#meta/asix-88772b.cm
+[00001.040] 03566.03568 [driver] Found driver: fuchsia-boot:///bt-transport-usb#meta/bt-transport-usb.cm
+[00001.041] 03566.03568 [driver] Found driver: fuchsia-boot:///bus-pci#meta/bus-pci.cm
+[00001.041] 03566.03568 [driver] Found driver: fuchsia-boot:///bus-pci#meta/pciroot-banjo-adapter.cm
+[00001.042] 01201.01300 [sysmem] metrics_buffer CreateMetricEventLogger failed (async): FIDL operation failed due to peer closed, epitaph: ZX_ERR_NOT_FOUND (-25)
+[00001.042] 01201.01300 [sysmem] metrics_buffer LogMetricEvents failed (async): FIDL operation failed due to peer closed, status: ZX_ERR_PEER_CLOSED (-24)
+[00001.043] 03566.03568 [driver] Found driver: fuchsia-boot:///buttons#meta/buttons.cm
+[00001.043] 01201.01300 [netsvc] Failed to redirect stdout to debuglog, assuming test environment and continuing: ZX_ERR_PEER_CLOSED
+[00001.044] 01201.01300 [netsvc] netsvc: running in full mode
+[00001.045] 03566.03568 [driver] Found driver: fuchsia-boot:///clock#meta/clock.cm
+[00001.045] 04212.04215 [console-launcher] [main.cc(281)] running
+[00001.049] 04212.04984 [console-launcher] [main.cc(371)] mounted '/boot'
+[00001.050] 04212.04984 [console-launcher] [main.cc(371)] mounted '/dev'
+[00001.050] 04212.04984 [console-launcher] [main.cc(371)] mounted '/pkg'
+[00001.050] 04212.04984 [console-launcher] [main.cc(371)] mounted '/svc'
+[00001.050] 03566.03568 [driver] Found driver: fuchsia-boot:///display-coordinator#meta/display-coordinator.cm
+[00001.051] 04212.04215 [console-launcher] [main.cc(452)] console.shell: enabled
+[00001.052] 04212.05064 [console-launcher] [console_launcher.cc(125)] launching /boot/bin/sh (sh:console)
+[00001.052] 04212.05078 [console-launcher] [console_launcher.cc(125)] launching /boot/bin/sh (sh:console)
+[00001.057] 04212.04984 [console-launcher] [main.cc(371)] mounted '/boot-bin'
+[00001.068] 03566.03568 [driver] Found driver: fuchsia-boot:///ftdi#meta/ftdi.cm
+[00001.081] 04184.05159 [driver,platform-bus] [platform-bus.cc(723)] VID: 1 PID: 1 board: "qemu-arm64"
+[00001.083] 04184.05159 [driver,platform-bus] [platform-bus.cc(745)] PlatformBus loaded board_revision: 0x00000001
+[00001.086] 03566.03568 [driver] Found driver: fuchsia-boot:///goldfish#meta/goldfish.cm
+[00001.091] 03566.03568 [driver] Found driver: fuchsia-boot:///goldfish_address_space#meta/goldfish_address_space.cm
+[00001.094] 03566.03568 [driver] Found driver: fuchsia-boot:///goldfish_control#meta/goldfish_control.cm
+[00001.097] 03566.03568 [driver] Found driver: fuchsia-boot:///goldfish_display#meta/goldfish-display.cm
+[00001.098] 03566.03568 [driver] Found driver: fuchsia-boot:///goldfish_sync#meta/goldfish_sync.cm
+[00001.099] 01201.01306 [device_name_provider] device-name-provider: Could not read MAC address from Boot Items VMO: ZX_ERR_BAD_HANDLE
+[00001.100] 03566.03568 [driver] Found driver: fuchsia-boot:///gpio#meta/gpio.cm
+[00001.101] 03566.03568 [driver] Found driver: fuchsia-boot:///gvnic#meta/gvnic.cm
+[00001.103] 03566.03568 [driver] Found driver: fuchsia-boot:///hid#meta/hid.cm
+[00001.104] 03566.03568 [driver] Found driver: fuchsia-boot:///hid-input-report#meta/hid-input-report.cm
+[00001.106] 03566.03568 [driver] Found driver: fuchsia-boot:///i2c#meta/i2c.cm
+[00001.106] 05618.05621 [fshost] fshost started config=Config { blob_max_bytes: 0, blobfs: true, blobfs_initial_inodes: 0, blobfs_use_deprecated_padded_format: false, check_filesystems: true, data: true, data_filesystem_format: "fxfs", data_max_bytes: 0, disable_automount: false, disable_block_watcher: false, factory: false, format_data_on_corruption: true, fvm: true, fvm_slice_size: 8388608, fxfs_blob: true, fxfs_crypt_url: "fuchsia-boot:///fxfs-crypt#meta/fxfs-crypt.cm", gpt: true, gpt_all: false, inline_crypto: false, merge_super_and_userdata: false, no_zxcrypt: false, provision_fxfs: false, ramdisk_image: false, starnix_volume_name: "", startup_profiling_seconds: 60, use_driver_blob_paging: false }
+[00001.107] 03566.03568 [driver] Found driver: fuchsia-boot:///mt-musb#meta/mt-musb.cm
+[00001.108] 05618.05621 [fshost] fshost: lifecycle handler ready
+[00001.108] 04212.04984 [console-launcher] [main.cc(371)] mounted '/tmp'
+[00001.109] 04212.04984 [console-launcher] [main.cc(371)] mounted '/block'
+[00001.109] 03566.03568 [driver] Found driver: fuchsia-boot:///netdevice-migration#meta/netdevice-migration.cm
+[00001.110] 05714.05718 [klog] vc: started with args VirtualConsoleArgs { disable: false, keep_log_visible: false, show_logo: true, keyrepeat: true, rounded_corners: false, color_scheme: ColorScheme { front: Color { r: 255, g: 255, b: 255, a: 255 
+[00001.110] 05714.05718 [klog] }, back: Color { r: 0, g: 0, b: 0, a: 255 } }, keymap: "US_QWERTY", display_rotation: Deg0, font_size: 16.0, dpi: [], scrollback_rows: 1024, buffer_count: 1 }
+[00001.110] 03566.03568 [driver] Found driver: fuchsia-boot:///network-device#meta/network-device.cm
+[00001.112] 03566.03568 [driver] Found driver: fuchsia-boot:///nvme#meta/nvme.cm
+[00001.113] 03566.03568 [driver] Found driver: fuchsia-boot:///pl031-rtc#meta/pl031-rtc.cm
+[00001.114] 03566.03568 [driver] Found driver: fuchsia-boot:///platform-bus#meta/platform-bus.cm
+[00001.115] 03566.03568 [driver] Found driver: fuchsia-boot:///power#meta/power.cm
+[00001.116] 03566.03568 [driver] Found driver: fuchsia-boot:///pwm#meta/pwm.cm
+[00001.117] 03566.03568 [driver] Found driver: fuchsia-boot:///qemu-arm64#meta/qemu-arm64.cm
+[00001.118] 03566.03568 [driver] Found driver: fuchsia-boot:///registers#meta/registers.cm
+[00001.120] 03566.03568 [driver] Found driver: fuchsia-boot:///sdmmc#meta/sdmmc.cm
+[00001.121] 03566.03568 [driver] Found driver: fuchsia-boot:///spi#meta/spi.cm
+[00001.122] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-audio#meta/usb-audio.cm
+[00001.123] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-bus#meta/usb-bus.cm
+[00001.124] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-cdc-acm#meta/usb-cdc-acm.cm
+[00001.125] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-cdc-ecm#meta/usb-cdc-ecm.cm
+[00001.126] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-cdc-function#meta/usb-cdc-function.cm
+[00001.127] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-composite#meta/usb-composite.cm
+[00001.128] 02268.02272 [sysmem] [sysmem.cc(259)] Overriding unused page check period to 600 seconds
+[00001.128] 02268.02272 [sysmem] [sysmem.cc(707)] sysmem finished initialization
+[00001.128] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-hid#meta/usb-hid.cm
+[00001.129] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-hub#meta/usb-hub.cm
+[00001.130] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-mass-storage#meta/usb-mass-storage.cm
+[00001.132] 03566.03568 [driver] Found driver: fuchsia-boot:///usb-peripheral#meta/usb-peripheral.cm
+[00001.133] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio-gpu-display#meta/virtio-gpu-display.cm
+[00001.134] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_block#meta/virtio_block.cm
+[00001.135] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_console#meta/virtio_console.cm
+[00001.136] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_input#meta/virtio_input.cm
+[00001.137] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_netdevice#meta/virtio_netdevice.cm
+[00001.138] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_rng#meta/virtio_rng.cm
+[00001.138] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_scsi#meta/virtio_scsi.cm
+[00001.139] 03566.03568 [driver] Found driver: fuchsia-boot:///virtio_socket#meta/virtio_socket.cm
+[00001.141] 03566.03568 [driver] Found driver: fuchsia-boot:///xhci#meta/xhci.cm
+[00001.141] 03566.03568 [driver] loaded base drivers.
+[00001.141] 01201.01306 [driver_index] protocol `fuchsia.component.resolution.Resolver-base` was not available for target `driver_index`:
+	cannot use protocol fuchsia.component.resolution.Resolver-base from parent at bootstrap/driver_index because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.152] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///qemu-arm64#meta/qemu-arm64.cm to pt
+[00001.157] 04184.07271 [driver,compat] [driver.cc(653)] Loaded driver 'qemu-arm64'
+[00001.160] 04184.07271 [driver,compat] [src/devices/misc/drivers/compat/driver.cc(467)] Failed to get ioport_resource 'ZX_ERR_PEER_CLOSED'
+[00001.161] 04184.07303 [driver,qemu-arm64] [qemu-bus.cc(28)] qemu-bus thread running 
+[00001.160] 01201.01300 [boot-drivers:board] protocol `fuchsia.kernel.IoportResource` was not available for target `boot-drivers:board`:
+	cannot offer protocol fuchsia.kernel.IoportResource from parent at . because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.162] 04184.07303 [driver,qemu-arm64] [lagos-usb.cc(60)] lagos: published mt-musb
+[00001.187] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///mt-musb#meta/mt-musb.cm to mt-musb
+[00001.189] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///bus-pci#meta/pciroot-banjo-adapter.cm to pci0
+[00001.193] 01201.01306 [boot-drivers:pci0] Optional service `fuchsia.hardware.pci.BoardConfiguration` was not available for target `boot-drivers:pci0`:
+	cannot use service fuchsia.hardware.pci.BoardConfiguration from parent at bootstrap/boot-drivers:pci0 because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.201] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///pl031-rtc#meta/pl031-rtc.cm to pl031
+[00001.217] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///bus-pci#meta/bus-pci.cm to pci-root
+[00001.221] 04184.07271 [driver,compat] [driver.cc(653)] Loaded driver 'pci'
+[00001.223] 04184.07271 [driver,compat] [src/devices/misc/drivers/compat/driver.cc(396)] Getting DeviceInfo failed with: ZX_ERR_NOT_FOUND
+[00001.223] 01201.01306 [boot-drivers:pci0.pci-root] service `fuchsia.driver.compat.Service` was not available for target `boot-drivers:pci0.pci-root`:
+	cannot use service fuchsia.driver.compat.Service from parent at bootstrap/boot-drivers:pci0.pci-root because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.224] 01201.01300 [boot-drivers:pci0.pci-root] service `fuchsia.hardware.pci.BoardConfiguration` was not available for target `boot-drivers:pci0.pci-root`:
+	cannot use service fuchsia.hardware.pci.BoardConfiguration from parent at bootstrap/boot-drivers:pci0.pci-root because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.224] 04184.07271 [driver,pci] [src/lib/ddktl/include/ddktl/metadata_server.h(72)] Failed to send GetMetadata request: ZX_ERR_PEER_CLOSED
+[00001.227] 04184.05159 [driver,platform-bus] [platform-device.cc(206)] IRQ vector 129 for platform device "mt-musb" has default mode 0x000000.  Using config mode 00000008 instead.
+[00001.227] 04184.05159 [driver,platform-bus] [platform-device.cc(230)] Creating interrupt with vector 129 (flags 0x000008) for platform device "mt-musb"
+[00001.238] 07594.07895 [driver,mt-musb] [mt-musb.cc(449)] mt-musb: clocks CG0 0x0->0x0 CLK_CFG_5 0x1010201->0x1010201
+[00001.238] 07594.07895 [driver,mt-musb] [mt-musb.cc(373)] mt-musb: HWVERS 0xe503 EPINFO 0x88 RAMINFO 0x8b POWER 0x21 DEVCTL 0x99
+[00001.239] 07594.07895 [driver,mt-musb] [mt-musb.cc(416)] mt-musb: started, waiting for usb-peripheral
+[00001.251] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///usb-peripheral#meta/usb-peripheral.cm to mt-musb-dci
+[00001.255] 07594.07895 [driver,usb_device] [usb-peripheral.cc(1351)] DCI driver does not support GetHardwareInfo, falling back to legacy mode
+[00001.257] 07594.07895 [driver,usb_device] [usb-peripheral.cc(316)] Serial number/MAC address not found. Using generic (non-unique) serial number.
+
+[00001.256] 01201.01300 [boot-drivers:mt-musb.mt-musb-dci] service `fuchsia.boot.metadata.SerialNumberMetadata` was not available for target `boot-drivers:mt-musb.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.SerialNumberMetadata from parent at bootstrap/boot-drivers:mt-musb.mt-musb-dci because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.257] 01201.01300 [boot-drivers:mt-musb.mt-musb-dci] service `fuchsia.boot.metadata.MacAddressMetadata` was not available for target `boot-drivers:mt-musb.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.MacAddressMetadata from parent at bootstrap/boot-drivers:mt-musb.mt-musb-dci because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.257] 01201.01300 [boot-drivers:mt-musb.mt-musb-dci] service `fuchsia.boot.metadata.MacAddressMetadata` was not available for target `boot-drivers:mt-musb.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.MacAddressMetadata from parent at bootstrap/boot-drivers:mt-musb.mt-musb-dci because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.257] 01201.01306 [boot-drivers:mt-musb.mt-musb-dci] service `fuchsia.boot.metadata.SerialNumberMetadata` was not available for target `boot-drivers:mt-musb.mt-musb-dci`:
+	cannot use service fuchsia.boot.metadata.SerialNumberMetadata from parent at bootstrap/boot-drivers:mt-musb.mt-musb-dci because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.258] 07594.07895 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kNoConfiguration -> kWaitForFunctionBind
+[00001.258] 07594.07895 [driver,usb_device] [usb-peripheral.cc(508)] Functions registered: [none], pending: [function-000]
+[00001.270] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///usb-cdc-function#meta/usb-cdc-function.cm to function-000
+[00001.275] 07594.08326 [driver,usb_cdc_function] [usb-cdc-function.cc(108)] ethernet MAC metadata not found. Generating random address
+[00001.274] 01201.01300 [boot-drivers:mt-musb.mt-musb-dci.usb-peripheral.function-000] service `fuchsia.boot.metadata.MacAddressMetadata` was not available for target `boot-drivers:mt-musb.mt-musb-dci.usb-peripheral.function-000`:
+	cannot use service fuchsia.boot.metadata.MacAddressMetadata from parent at bootstrap/boot-drivers:mt-musb.mt-musb-dci.usb-peripheral.function-000 because parent does not offer the capability
+	For more, run `ffx component doctor`
+[00001.281] 07594.07895 [driver,usb_device] [usb-peripheral.cc(508)] Functions registered: [function-000], pending: [none]
+[00001.281] 07594.07895 [driver,usb_device] [usb-peripheral.cc(546)] All functions registered. Starting peripheral controller.
+[00001.281] 07594.07895 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kWaitForFunctionBind -> kStarting
+[00001.281] 07594.07895 [driver,usb_device] [usb-peripheral.cc(827)] Starting controller: cur_mode=NONE new_mode=UsbMode::kPeripheral (state=kStarting)
+[00001.281] 07594.08338 [driver,mt-musb] [mt-musb.cc(528)] mt-musb: StartController
+[00001.282] 07594.08338 [driver,mt-musb] [mt-musb.cc(479)] mt-musb: PHY ACR6 0x40100472 DTM0 0x2000000 DTM1 0x3f2f
+[00001.282] 07594.08338 [driver,mt-musb] [mt-musb.cc(540)] mt-musb: soft-connect on, POWER 0x71 DEVCTL 0x98
+[00001.282] 07594.07895 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kStarting -> kPeripheralReady
+[00001.299] 03071.03073 [driver_manager.cm] [node.cc(2278)] Binding fuchsia-boot:///network-device#meta/network-device.cm to usb-cdc-netdev
+[00001.304] 01201.01300 [device_name_provider] netifc: ? /dev/class/network/3163445217
+[00001.305] 01201.01300 [device_name_provider] netsvc: using /dev/class/network/3163445217
+[00001.305] 01201.01306 [device_name_provider] device-name-provider: generated device name from discovered interface: fuchsia-0201-79a3-4847
+[00001.306] 01201.01306 [netsvc] netsvc: nodename='fuchsia-0201-79a3-4847'
+[00001.307] 01201.01300 [netsvc] netifc: ? /dev/class/network/3163445217
+[00001.307] 01201.01300 [netsvc] netsvc: using /dev/class/network/3163445217
+[00001.308] 01201.01300 [netsvc] macaddr: 02:01:79:a3:48:47
+[00001.308] 01201.01300 [netsvc] ip6addr (LL) : fe80::1:79fe:fea3:4847
+[00001.308] 01201.01300 [netsvc] ip6addr (ULA): fd01:79a3:4847::a348:4700
+[00001.308] 01201.01300 [netsvc] snmaddr: ff02::1:ffa3:4847
+[00001.308] 01201.01300 [netsvc] netsvc: start
+[00001.309] 01201.01300 [netsvc] udp6_send: DeviceBuffer::Get failed: ZX_ERR_NO_RESOURCES
+[00001.309] 01201.01300 [netsvc] netsvc: failed to send debuglog: ZX_ERR_NO_RESOURCES
+[00001.338] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x4 USB 0x1 TX 0x0 RX 0x0
+[00001.457] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x4 USB 0x4 TX 0x0 RX 0x0
+[00001.457] 07594.08785 [driver,mt-musb] [mt-musb.cc(611)] mt-musb: bus reset, high speed
+[00001.458] 07594.09077 [driver,usb_device] [usb-peripheral.cc(2470)] OnHostConnectionChanged: current_state=kPeripheralReady connected=true
+[00001.458] 07594.09077 [driver,usb_device] [usb-peripheral.cc(881)] UsbPeripheral: State transition kPeripheralReady -> kHostConnected
+[00001.569] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.569] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.569] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.574] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x4 USB 0x4 TX 0x0 RX 0x0
+[00001.574] 07594.08785 [driver,mt-musb] [mt-musb.cc(611)] mt-musb: bus reset, high speed
+[00001.682] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.682] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.682] 07594.08785 [driver,mt-musb] [mt-musb.cc(665)] mt-musb: address 1
+[00001.693] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.693] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.693] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.694] 07594.08785 [driver,mt-musb] [mt-musb.cc(577)] mt-musb: irq L1 0x1 USB 0x0 TX 0x1 RX 0x0
+[00001.716] 07594.08326 [driver,usb_device] [usb-peripheral.cc(1565)] Configuration 1
+[00001.716] 07594.08338 [driver,usb_cdc_function] [usb-cdc-function.cc(710)] configured = true
+[00001.717] 07594.07895 [driver,mt-musb] [mt-musb.cc(1024)] mt-musb: ep 0x81 configured, type 3 maxp 16
+[00001.739] 07594.07895 [driver,mt-musb] [mt-musb.cc(1024)] mt-musb: ep 0x1 configured, type 2 maxp 512
+[00001.740] 07594.07895 [driver,mt-musb] [mt-musb.cc(1024)] mt-musb: ep 0x82 configured, type 2 maxp 512
+[00003.305] 03071.03073 [driver_manager.cm] [bootup_tracker.cc(117)] Bootup completed.
+[00011.291] 03566.03568 [driver] driver-index stopping because it is idle.
+[00011.292] 01201.01306 [klog] [component_manager] WARN: escrowed bootstrap/driver_index, saved Some(1138688) bytes
