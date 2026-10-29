@@ -1,0 +1,1 @@
+Extracted from fuchsia commit 159bd6871c0 (parent of 3f318eb8792, deleted 2021-06-10). BSD-style Fuchsia license.
