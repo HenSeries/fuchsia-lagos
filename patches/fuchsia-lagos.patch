@@ -1,3 +1,22 @@
+diff --git a/boards/arm64/BUILD.gn b/boards/arm64/BUILD.gn
+index 769b13237a2..ff62798c0f2 100644
+--- a/boards/arm64/BUILD.gn
++++ b/boards/arm64/BUILD.gn
+@@ -67,6 +67,14 @@ board_input_bundle("main_bundle") {
+       package_set = "bootfs"
+       driver_components = [ "meta/pl031-rtc.cm" ]
+     },
++
++    # [fuchsia-lagos] MediaTek MUSB USB device controller (Moto G06 / MT6768),
++    # published by qemu-arm64's lagos-usb.cc. See fuchsia-lagos/docs/17.
++    {
++      package_target = "//src/devices/usb/drivers/mt-musb:package"
++      package_set = "bootfs"
++      driver_components = [ "meta/mt-musb.cm" ]
++    },
+   ]
+   version = build_info_version
+ }
 diff --git a/build/bazel/templates/template.bazelrc b/build/bazel/templates/template.bazelrc
 index 120a67039ad..1521ed75e11 100644
 --- a/build/bazel/templates/template.bazelrc
@@ -24,8 +43,1707 @@ index 120a67039ad..1521ed75e11 100644
  # Do not create runfiles symlink forests for external repositories
  # under .runfiles/_main/external/repo in addition to .runfiles/repo.
  #
+diff --git a/build/drivers/all_drivers_list.txt b/build/drivers/all_drivers_list.txt
+index 8b93091f080..3f9f9497eae 100644
+--- a/build/drivers/all_drivers_list.txt
++++ b/build/drivers/all_drivers_list.txt
+@@ -314,6 +314,7 @@
+ //src/devices/tpm/drivers/tpm:fuchsia_driver
+ //src/devices/usb/drivers/dwc2:dwc2-driver
+ //src/devices/usb/drivers/dwc3:dwc3-driver
++//src/devices/usb/drivers/mt-musb:mt-musb-driver
+ //src/devices/usb/drivers/usb-bus:usb-bus-driver
+ //src/devices/usb/drivers/usb-composite:usb-composite-driver
+ //src/devices/usb/drivers/usb-hub:usb-hub-driver
+diff --git a/src/devices/bind/fuchsia.mediatek.platform/BUILD.gn b/src/devices/bind/fuchsia.mediatek.platform/BUILD.gn
+new file mode 100644
+index 00000000000..0581d3cca01
+--- /dev/null
++++ b/src/devices/bind/fuchsia.mediatek.platform/BUILD.gn
+@@ -0,0 +1,10 @@
++# Copyright 2026 The Fuchsia Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/bind/bind.gni")
++
++# [fuchsia-lagos] MediaTek platform devices (Moto G06 / MT6768 bring-up).
++bind_library("fuchsia.mediatek.platform") {
++  source = "fuchsia.mediatek.platform.bind"
++}
+diff --git a/src/devices/bind/fuchsia.mediatek.platform/fuchsia.mediatek.platform.bind b/src/devices/bind/fuchsia.mediatek.platform/fuchsia.mediatek.platform.bind
+new file mode 100644
+index 00000000000..d766c7e61cb
+--- /dev/null
++++ b/src/devices/bind/fuchsia.mediatek.platform/fuchsia.mediatek.platform.bind
+@@ -0,0 +1,17 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++library fuchsia.mediatek.platform;
++
++extend uint fuchsia.BIND_PLATFORM_DEV_VID {
++  MEDIATEK = 0x07,
++};
++
++extend uint fuchsia.BIND_PLATFORM_DEV_PID {
++  MT6768 = 0x01,
++};
++
++extend uint fuchsia.BIND_PLATFORM_DEV_DID {
++  MUSB_PERIPHERAL = 0x01,
++};
+diff --git a/src/devices/board/drivers/qemu-arm64/BUILD.gn b/src/devices/board/drivers/qemu-arm64/BUILD.gn
+index 101a247e754..538a1e786b9 100644
+--- a/src/devices/board/drivers/qemu-arm64/BUILD.gn
++++ b/src/devices/board/drivers/qemu-arm64/BUILD.gn
+@@ -30,6 +30,7 @@ fuchsia_cc_driver("qemu-arm64-driver") {
+     "qemu-bus.cc",
+     "qemu-pci.cc",
+     "qemu-rtc.cc",
++    "lagos-usb.cc",
+   ]
+   deps = [
+     ":qemu-arm64_bind",
+diff --git a/src/devices/board/drivers/qemu-arm64/lagos-usb.cc b/src/devices/board/drivers/qemu-arm64/lagos-usb.cc
+new file mode 100644
+index 00000000000..88f6a3ef712
+--- /dev/null
++++ b/src/devices/board/drivers/qemu-arm64/lagos-usb.cc
+@@ -0,0 +1,64 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// [fuchsia-lagos] The Moto G06 (MT6768) boots with the arm64 board config,
++// so this qemu-arm64 board driver is the one that binds. Until lagos has its
++// own (devicetree) board driver, it also publishes the MediaTek MUSB USB
++// device controller for src/devices/usb/drivers/mt-musb. See
++// fuchsia-lagos/docs/17.
++
++#include <fidl/fuchsia.hardware.platform.bus/cpp/driver/fidl.h>
++#include <fidl/fuchsia.hardware.platform.bus/cpp/fidl.h>
++#include <lib/ddk/debug.h>
++#include <zircon/status.h>
++
++#include "qemu-bus.h"
++
++namespace board_qemu_arm64 {
++namespace fpbus = fuchsia_hardware_platform_bus;
++
++namespace {
++constexpr uint32_t kMediatekVid = 0x07;        // fuchsia.mediatek.platform MEDIATEK
++constexpr uint32_t kMusbPeripheralDid = 0x01;  // MUSB_PERIPHERAL
++constexpr uint32_t kMt6768Pid = 0x01;          // MT6768
++constexpr uint32_t kUsbIrq = 32 + 0x61;        // GIC SPI 97, level high (stock DT)
++}  // namespace
++
++zx_status_t QemuArm64::LagosUsbInit() {
++  static const std::vector<fpbus::Mmio> kMmios{
++      {{.base = 0x11200000, .length = 0x10000}},  // MUSB core
++      {{.base = 0x11cc0000, .length = 0x1000}},   // U2 PHY (port 0 at +0x800)
++      {{.base = 0x10001000, .length = 0x1000}},   // infracfg_ao (USB clock gate)
++      {{.base = 0x10000000, .length = 0x1000}},   // topckgen (usb_top_sel mux)
++  };
++  static const std::vector<fpbus::Irq> kIrqs{
++      {{
++          .irq = fpbus::IrqSpec::WithIrq(kUsbIrq),
++          .mode = fpbus::ZirconInterruptMode::kLevelHigh,
++      }},
++  };
++  fpbus::Node dev;
++  dev.name() = "mt-musb";
++  dev.vid() = kMediatekVid;
++  dev.pid() = kMt6768Pid;
++  dev.did() = kMusbPeripheralDid;
++  dev.mmio() = kMmios;
++  dev.irq() = kIrqs;
++
++  fidl::Arena<> fidl_arena;
++  fdf::Arena arena('MUSB');
++  auto result = pbus_.buffer(arena)->NodeAdd(fidl::ToWire(fidl_arena, dev));
++  if (!result.ok()) {
++    zxlogf(ERROR, "lagos: NodeAdd(mt-musb) request failed: %s", result.FormatDescription().data());
++    return result.status();
++  }
++  if (result->is_error()) {
++    zxlogf(ERROR, "lagos: NodeAdd(mt-musb) failed: %s", zx_status_get_string(result->error_value()));
++    return result->error_value();
++  }
++  zxlogf(INFO, "lagos: published mt-musb");
++  return ZX_OK;
++}
++
++}  // namespace board_qemu_arm64
+diff --git a/src/devices/board/drivers/qemu-arm64/qemu-bus.cc b/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
+index 9e851c88fea..86f7cc5c518 100644
+--- a/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
++++ b/src/devices/board/drivers/qemu-arm64/qemu-bus.cc
+@@ -27,6 +27,11 @@ int QemuArm64::Thread() {
+   zx_status_t status;
+   zxlogf(INFO, "qemu-bus thread running ");
+ 
++  // [fuchsia-lagos] First, so a QEMU-specific failure below can't skip it.
++  if (zx_status_t s = LagosUsbInit(); s != ZX_OK) {
++    zxlogf(ERROR, "%s: LagosUsbInit() failed %d", __func__, s);
++  }
++
+   status = PciInit();
+   if (status != ZX_OK) {
+     zxlogf(ERROR, "%s: PciInit() failed %d", __func__, status);
+diff --git a/src/devices/board/drivers/qemu-arm64/qemu-bus.h b/src/devices/board/drivers/qemu-arm64/qemu-bus.h
+index d53ed24b483..ecbe1c60c3b 100644
+--- a/src/devices/board/drivers/qemu-arm64/qemu-bus.h
++++ b/src/devices/board/drivers/qemu-arm64/qemu-bus.h
+@@ -38,6 +38,7 @@ class QemuArm64 : public ddk::Device<QemuArm64> {
+   zx_status_t PciInit();
+   zx_status_t PciAdd();
+   zx_status_t RtcInit();
++  zx_status_t LagosUsbInit();  // [fuchsia-lagos]
+ 
+   // TODO(https://fxbug.dev/42059490): Switch to fdf::SyncClient once it's supported.
+   fdf::WireSyncClient<fuchsia_hardware_platform_bus::PlatformBus> pbus_;
+diff --git a/src/devices/usb/drivers/mt-musb/BUILD.gn b/src/devices/usb/drivers/mt-musb/BUILD.gn
+new file mode 100644
+index 00000000000..16f4e2aaa9a
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/BUILD.gn
+@@ -0,0 +1,63 @@
++# Copyright 2026 The Fuchsia Authors. All rights reserved.
++# Use of this source code is governed by a BSD-style license that can be
++# found in the LICENSE file.
++
++import("//build/bind/bind.gni")
++import("//build/drivers.gni")
++
++# [fuchsia-lagos] MediaTek MUSB device-mode controller (MT6768 / Moto G06).
++
++fuchsia_driver_dml("mt-musb-dml") {
++  dml = "meta/mt-musb.dml"
++  driver_name = "mt-musb"
++}
++
++driver_bind_rules("mt-musb-bind") {
++  dml_label = ":mt-musb-dml"
++  bind_output = "mt-musb.bindbc"
++  deps = [
++    "//src/devices/bind/fuchsia.mediatek.platform",
++    "//src/devices/bind/fuchsia.platform",
++  ]
++}
++
++fuchsia_cc_driver("mt-musb-driver") {
++  output_name = "mt-musb"
++  configs += [ "//build/config:all_source" ]
++  sources = [
++    "mt-musb.cc",
++    "mt-musb.h",
++  ]
++  deps = [
++    ":mt-musb-bind",
++    "//sdk/fidl/fuchsia.driver.framework:fuchsia.driver.framework_cpp",
++    "//sdk/fidl/fuchsia.hardware.platform.device:fuchsia.hardware.platform.device_cpp",
++    "//sdk/fidl/fuchsia.hardware.usb.dci:fuchsia.hardware.usb.dci_cpp",
++    "//sdk/fidl/fuchsia.hardware.usb.descriptor:fuchsia.hardware.usb.descriptor_cpp",
++    "//sdk/fidl/fuchsia.hardware.usb.endpoint:fuchsia.hardware.usb.endpoint_cpp",
++    "//sdk/fidl/fuchsia.hardware.usb.request:fuchsia.hardware.usb.request_cpp",
++    "//sdk/lib/async:async-cpp",
++    "//sdk/lib/driver/component/cpp",
++    "//sdk/lib/driver/logging/cpp",
++    "//sdk/lib/driver/mmio/cpp",
++    "//sdk/lib/driver/platform-device/cpp",
++    "//src/devices/bind/fuchsia:fuchsia_cpp",
++    "//src/devices/bind/fuchsia.mediatek.platform:fuchsia.mediatek.platform_cpp",
++    "//src/devices/lib/driver:driver_runtime",
++    "//zircon/system/ulib/sync:sync-cpp",
++    "//zircon/system/ulib/zx",
++  ]
++}
++
++fuchsia_driver_component("mt-musb") {
++  dml_label = ":mt-musb-dml"
++  info = "meta/mt-musb-info.json"
++  component_name = "mt-musb"
++  deps = [ ":mt-musb-driver" ]
++}
++
++fuchsia_driver_package("package") {
++  package_name = "mt-musb"
++  export_to_bazel = true
++  driver_components = [ ":mt-musb" ]
++}
+diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb-info.json b/src/devices/usb/drivers/mt-musb/meta/mt-musb-info.json
+new file mode 100644
+index 00000000000..bdb591bc20f
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb-info.json
+@@ -0,0 +1,9 @@
++{
++    "short_description": "MediaTek MUSB USB device controller (DCI), PIO",
++    "manufacturer": "MediaTek",
++    "families": [],
++    "models": [],
++    "areas": [
++        "USB"
++    ]
++}
+diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind b/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind
+new file mode 100644
+index 00000000000..82aa844ba92
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.bind
+@@ -0,0 +1,9 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// WARNING: THIS FILE IS GENERATED BY dmlc. DO NOT EDIT.
++
++fuchsia.BIND_PROTOCOL == fuchsia.platform.BIND_PROTOCOL.DEVICE;
++fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK;
++fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL;
+diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml b/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml
+new file mode 100644
+index 00000000000..79f385600dc
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.cml
+@@ -0,0 +1,34 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++// WARNING: THIS FILE IS GENERATED BY dmlc. DO NOT EDIT.
++{
++    include: [
++        "driver/platform-device.shard.cml",
++        "driver_component/driver.shard.cml",
++        "inspect/client.shard.cml",
++        "syslog/client.shard.cml",
++    ],
++    program: {
++        runner: "driver",
++        binary: "driver/mt-musb.so",
++        default_dispatcher_opts: [ "allow_sync_calls" ],
++        bind: "meta/bind/mt-musb.bindbc",
++    },
++    capabilities: [
++        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
++        { service: "fuchsia.hardware.usb.dci.UsbDciService" },
++    ],
++    use: [],
++    expose: [
++        {
++            service: "fuchsia.hardware.usb.dci.UsbDciService",
++            from: "self",
++        },
++        {
++            protocol: "fuchsia.hardware.usb.endpoint.Endpoint",
++            from: "self",
++        },
++    ],
++}
+diff --git a/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml b/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml
+new file mode 100644
+index 00000000000..373aca69372
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/meta/mt-musb.dml
+@@ -0,0 +1,32 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++{
++    name: "mt-musb",
++    include: [
++        "driver/platform-device.shard.cml",
++        "driver_component/driver.shard.cml",
++    ],
++    program: {
++        default_dispatcher_opts: [ "allow_sync_calls" ],
++        bind: {
++            banjo: "fuchsia.platform.BIND_PROTOCOL.DEVICE",
++            vid: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK",
++            did: "fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL",
++        },
++    },
++    capabilities: [
++        { protocol: "fuchsia.hardware.usb.endpoint.Endpoint" },
++        { service: "fuchsia.hardware.usb.dci.UsbDciService" },
++    ],
++    expose: [
++        {
++            service: "fuchsia.hardware.usb.dci.UsbDciService",
++            from: "self",
++        },
++        {
++            protocol: "fuchsia.hardware.usb.endpoint.Endpoint",
++            from: "self",
++        },
++    ],
++}
+diff --git a/src/devices/usb/drivers/mt-musb/mt-musb.cc b/src/devices/usb/drivers/mt-musb/mt-musb.cc
+new file mode 100644
+index 00000000000..9eae2f0436c
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/mt-musb.cc
+@@ -0,0 +1,1114 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#include "src/devices/usb/drivers/mt-musb/mt-musb.h"
++
++#include <fidl/fuchsia.hardware.platform.device/cpp/fidl.h>
++#include <lib/async/cpp/task.h>
++#include <lib/driver/component/cpp/driver_export2.h>
++#include <lib/driver/component/cpp/node_add_args.h>
++#include <lib/driver/logging/cpp/logger.h>
++#include <lib/zx/time.h>
++#include <lib/zx/vmar.h>
++#include <zircon/status.h>
++
++#include <algorithm>
++#include <cstring>
++
++#include <bind/fuchsia/cpp/bind.h>
++#include <bind/fuchsia/mediatek/platform/cpp/bind.h>
++
++namespace mt_musb {
++
++namespace {
++
++// ---- MUSB core (MMIO 0 = 0x11200000) ----
++constexpr uint32_t kFaddr = 0x00;     // 8
++constexpr uint32_t kPower = 0x01;     // 8
++constexpr uint32_t kIntrTx = 0x02;    // 16, W1C on MediaTek
++constexpr uint32_t kIntrRx = 0x04;    // 16, W1C
++constexpr uint32_t kIntrTxE = 0x06;   // 16
++constexpr uint32_t kIntrRxE = 0x08;   // 16
++constexpr uint32_t kIntrUsb = 0x0a;   // 8, W1C
++constexpr uint32_t kIntrUsbE = 0x0b;  // 8
++constexpr uint32_t kIndex = 0x0e;     // 8
++// Indexed endpoint registers (select with kIndex first).
++constexpr uint32_t kTxMaxP = 0x10;   // 16
++constexpr uint32_t kTxCsr = 0x12;    // 16 (CSR0 for ep0)
++constexpr uint32_t kRxMaxP = 0x14;   // 16
++constexpr uint32_t kRxCsr = 0x16;    // 16
++constexpr uint32_t kRxCount = 0x18;  // 16 (COUNT0 for ep0)
++constexpr uint32_t kDevCtl = 0x60;     // 8
++constexpr uint32_t kTxFifoSz = 0x62;   // 8, indexed
++constexpr uint32_t kRxFifoSz = 0x63;   // 8, indexed
++constexpr uint32_t kTxFifoAdd = 0x64;  // 16, indexed, 8-byte units
++constexpr uint32_t kRxFifoAdd = 0x66;  // 16, indexed
++constexpr uint32_t kHwVers = 0x6c;     // 16
++constexpr uint32_t kEpInfo = 0x78;     // 8
++constexpr uint32_t kRamInfo = 0x79;    // 8
++constexpr uint32_t kRxTogEn = 0x82;    // 16
++constexpr uint32_t kTxTogEn = 0x86;    // 16
++constexpr uint32_t kL1Ints = 0xa0;     // 32
++constexpr uint32_t kL1IntM = 0xa4;     // 32
++constexpr uint32_t Fifo(uint8_t ep) { return 0x20 + 4u * ep; }
++
++constexpr uint8_t kPowerEnSuspend = 0x01;
++constexpr uint8_t kPowerReset = 0x08;
++constexpr uint8_t kPowerHsMode = 0x10;
++constexpr uint8_t kPowerHsEnab = 0x20;
++constexpr uint8_t kPowerSoftConn = 0x40;
++
++constexpr uint8_t kUsbIntSuspend = 0x01;
++constexpr uint8_t kUsbIntResume = 0x02;
++constexpr uint8_t kUsbIntReset = 0x04;
++constexpr uint8_t kUsbIntDiscon = 0x20;
++
++constexpr uint32_t kL1Tx = 1u << 0;
++constexpr uint32_t kL1Rx = 1u << 1;
++constexpr uint32_t kL1UsbCom = 1u << 2;
++
++// CSR0 (peripheral).
++constexpr uint16_t kCsr0RxPktRdy = 0x0001;
++constexpr uint16_t kCsr0TxPktRdy = 0x0002;
++constexpr uint16_t kCsr0SentStall = 0x0004;
++constexpr uint16_t kCsr0DataEnd = 0x0008;
++constexpr uint16_t kCsr0SetupEnd = 0x0010;
++constexpr uint16_t kCsr0SendStall = 0x0020;
++constexpr uint16_t kCsr0SvdRxPktRdy = 0x0040;
++constexpr uint16_t kCsr0SvdSetupEnd = 0x0080;
++
++// TXCSR (peripheral).
++constexpr uint16_t kTxCsrTxPktRdy = 0x0001;
++constexpr uint16_t kTxCsrUnderRun = 0x0004;
++constexpr uint16_t kTxCsrFlushFifo = 0x0008;
++constexpr uint16_t kTxCsrSendStall = 0x0010;
++constexpr uint16_t kTxCsrSentStall = 0x0020;
++constexpr uint16_t kTxCsrClrDataTog = 0x0040;
++constexpr uint16_t kTxCsrMode = 0x2000;
++
++// RXCSR (peripheral).
++constexpr uint16_t kRxCsrRxPktRdy = 0x0001;
++constexpr uint16_t kRxCsrOverRun = 0x0004;
++constexpr uint16_t kRxCsrFlushFifo = 0x0010;
++constexpr uint16_t kRxCsrSendStall = 0x0020;
++constexpr uint16_t kRxCsrSentStall = 0x0040;
++constexpr uint16_t kRxCsrClrDataTog = 0x0080;
++
++// ---- U2 PHY (MMIO 1 = 0x11cc0000, port 0 at +0x800) ----
++constexpr uint32_t kPhy = 0x800;
++constexpr uint32_t kUsbPhyAcr1 = kPhy + 0x04;
++constexpr uint32_t kUsbPhyAcr5 = kPhy + 0x14;
++constexpr uint32_t kUsbPhyAcr6 = kPhy + 0x18;
++constexpr uint32_t kUsbPhyAcr3 = kPhy + 0x1c;
++constexpr uint32_t kU2PhyAcr4 = kPhy + 0x20;
++constexpr uint32_t kU2PhyDtm0 = kPhy + 0x68;
++constexpr uint32_t kU2PhyDtm1 = kPhy + 0x6c;
++
++// ---- Clocks (MMIO 2 = infracfg_ao 0x10001000, MMIO 3 = topckgen 0x10000000) ----
++constexpr uint32_t kInfraCg0Clr = 0x84;
++constexpr uint32_t kInfraCg0Sta = 0x90;
++constexpr uint32_t kIcUsbBit = 1u << 8;
++constexpr uint32_t kTopClkCfgUpdate = 0x04;
++constexpr uint32_t kTopClkCfg5 = 0x90;
++constexpr uint32_t kTopClkCfg5Set = 0x94;
++constexpr uint32_t kTopClkCfg5Clr = 0x98;
++
++uint8_t FifoSizeCode(uint16_t bytes) {
++  // Size is 2^(code + 3) bytes.
++  uint8_t code = 0;
++  while ((8u << code) < bytes) {
++    code++;
++  }
++  return code;
++}
++
++}  // namespace
++
++// ============================== Endpoint ==============================
++
++Endpoint::~Endpoint() {
++  std::lock_guard<std::mutex> lock(vmo_lock_);
++  for (auto& [id, m] : vmos_) {
++    zx::vmar::root_self()->unmap(m.addr, m.size);
++  }
++}
++
++void Endpoint::Connect(async_dispatcher_t* dispatcher,
++                       fidl::ServerEnd<fendpoint::Endpoint> server_end) {
++  std::lock_guard<std::mutex> lock(binding_lock_);
++  binding_.emplace(fidl::BindServer(
++      dispatcher, std::move(server_end), this,
++      [](Endpoint* ep, fidl::UnbindInfo, fidl::ServerEnd<fendpoint::Endpoint>) {
++        std::lock_guard<std::mutex> lock(ep->binding_lock_);
++        ep->binding_.reset();
++      }));
++}
++
++void Endpoint::GetInfo(GetInfoCompleter::Sync& completer) {
++  completer.Reply(fit::as_error(ZX_ERR_NOT_SUPPORTED));
++}
++
++void Endpoint::RegisterVmos(RegisterVmosRequest& request, RegisterVmosCompleter::Sync& completer) {
++  std::vector<fendpoint::VmoHandle> out;
++  std::lock_guard<std::mutex> lock(vmo_lock_);
++  for (const auto& info : request.vmo_ids()) {
++    if (!info.id() || !info.size()) {
++      continue;
++    }
++    const uint64_t id = *info.id();
++    const size_t size = *info.size();
++    if (vmos_.contains(id)) {
++      fdf::error("ep {:#x}: VMO {} already registered", ep_num_ | (is_in_ ? 0x80 : 0), id);
++      continue;
++    }
++    MappedVmo m;
++    if (zx_status_t s = zx::vmo::create(size, 0, &m.vmo); s != ZX_OK) {
++      fdf::error("vmo create: {}", zx_status_get_string(s));
++      continue;
++    }
++    if (zx_status_t s = zx::vmar::root_self()->map(ZX_VM_PERM_READ | ZX_VM_PERM_WRITE, 0, m.vmo,
++                                                   0, size, &m.addr);
++        s != ZX_OK) {
++      fdf::error("vmo map: {}", zx_status_get_string(s));
++      continue;
++    }
++    m.size = size;
++    zx::vmo dup;
++    if (zx_status_t s = m.vmo.duplicate(ZX_RIGHT_SAME_RIGHTS, &dup); s != ZX_OK) {
++      zx::vmar::root_self()->unmap(m.addr, m.size);
++      continue;
++    }
++    fendpoint::VmoHandle handle;
++    handle.id(id);
++    handle.vmo(std::move(dup));
++    out.push_back(std::move(handle));
++    vmos_.emplace(id, std::move(m));
++  }
++  completer.Reply({std::move(out)});
++}
++
++void Endpoint::UnregisterVmos(UnregisterVmosRequest& request,
++                              UnregisterVmosCompleter::Sync& completer) {
++  std::vector<uint64_t> failed;
++  std::vector<zx_status_t> errors;
++  std::lock_guard<std::mutex> lock(vmo_lock_);
++  for (uint64_t id : request.vmo_ids()) {
++    auto it = vmos_.find(id);
++    if (it == vmos_.end()) {
++      failed.push_back(id);
++      errors.push_back(ZX_ERR_NOT_FOUND);
++      continue;
++    }
++    zx::vmar::root_self()->unmap(it->second.addr, it->second.size);
++    vmos_.erase(it);
++  }
++  completer.Reply({std::move(failed), std::move(errors)});
++}
++
++void Endpoint::QueueRequests(QueueRequestsRequest& request,
++                             QueueRequestsCompleter::Sync& completer) {
++  {
++    std::lock_guard<std::mutex> lock(musb_->hw_lock_);
++    for (auto& req : request.req()) {
++      queued.push(std::move(req));
++    }
++  }
++  musb_->KickEndpoint(this);
++}
++
++void Endpoint::CancelAll(CancelAllCompleter::Sync& completer) {
++  musb_->CancelEndpoint(this);
++  completer.Reply(fit::ok());
++}
++
++void Endpoint::FailAll(zx_status_t status) {
++  std::vector<frequest::Request> reqs;
++  {
++    std::lock_guard<std::mutex> lock(musb_->hw_lock_);
++    if (current) {
++      reqs.push_back(std::move(*current));
++      current.reset();
++    }
++    while (!queued.empty()) {
++      reqs.push_back(std::move(queued.front()));
++      queued.pop();
++    }
++    rx_waiting = false;
++    zlp_pending = false;
++  }
++  for (auto& r : reqs) {
++    Complete(std::move(r), status, 0);
++  }
++}
++
++size_t Endpoint::RequestLength(const frequest::Request& req) {
++  size_t len = 0;
++  if (req.data()) {
++    for (const auto& region : *req.data()) {
++      len += region.size().value_or(0);
++    }
++  }
++  return len;
++}
++
++bool Endpoint::Gather(const frequest::Request& req, std::vector<uint8_t>& out) {
++  out.clear();
++  if (!req.data()) {
++    return true;
++  }
++  std::lock_guard<std::mutex> lock(vmo_lock_);
++  for (const auto& region : *req.data()) {
++    const size_t size = region.size().value_or(0);
++    const size_t off = region.offset().value_or(0);
++    if (size == 0 || !region.buffer()) {
++      continue;
++    }
++    const auto& b = *region.buffer();
++    if (b.Which() == frequest::Buffer::Tag::kVmoId) {
++      auto it = vmos_.find(b.vmo_id().value());
++      if (it == vmos_.end() || off + size > it->second.size) {
++        return false;
++      }
++      const auto* p = reinterpret_cast<const uint8_t*>(it->second.addr + off);
++      out.insert(out.end(), p, p + size);
++    } else if (b.Which() == frequest::Buffer::Tag::kData) {
++      const auto& d = b.data().value();
++      if (off + size > d.size()) {
++        return false;
++      }
++      out.insert(out.end(), d.begin() + static_cast<ptrdiff_t>(off),
++                 d.begin() + static_cast<ptrdiff_t>(off + size));
++    } else {
++      return false;
++    }
++  }
++  return true;
++}
++
++bool Endpoint::Scatter(frequest::Request& req, const std::vector<uint8_t>& in) {
++  if (!req.data()) {
++    return in.empty();
++  }
++  size_t pos = 0;
++  std::lock_guard<std::mutex> lock(vmo_lock_);
++  for (auto& region : *req.data()) {
++    if (pos >= in.size()) {
++      break;
++    }
++    const size_t size = region.size().value_or(0);
++    const size_t off = region.offset().value_or(0);
++    const size_t n = std::min(size, in.size() - pos);
++    if (n == 0 || !region.buffer()) {
++      continue;
++    }
++    auto& b = *region.buffer();
++    if (b.Which() == frequest::Buffer::Tag::kVmoId) {
++      auto it = vmos_.find(b.vmo_id().value());
++      if (it == vmos_.end() || off + n > it->second.size) {
++        return false;
++      }
++      memcpy(reinterpret_cast<uint8_t*>(it->second.addr + off), in.data() + pos, n);
++    } else if (b.Which() == frequest::Buffer::Tag::kData) {
++      auto& d = b.data().value();
++      if (d.size() < off + n) {
++        d.resize(off + n);
++      }
++      memcpy(d.data() + off, in.data() + pos, n);
++    } else {
++      return false;
++    }
++    pos += n;
++  }
++  return true;
++}
++
++void Endpoint::Complete(frequest::Request req, zx_status_t status, size_t actual) {
++  std::vector<fendpoint::Completion> completions;
++  fendpoint::Completion completion;
++  completion.request(std::move(req));
++  completion.status(status);
++  completion.transfer_size(actual);
++  completions.push_back(std::move(completion));
++  std::lock_guard<std::mutex> lock(binding_lock_);
++  if (!binding_) {
++    return;
++  }
++  auto result = fidl::SendEvent(*binding_)->OnCompletion(std::move(completions));
++  if (result.is_error()) {
++    fdf::error("ep {:#x}: OnCompletion: {}", ep_num_ | (is_in_ ? 0x80 : 0),
++               result.error_value().FormatDescription());
++  }
++}
++
++// ============================== MtMusb ==============================
++
++zx::result<> MtMusb::Start(fdf::DriverContext context) {
++  auto incoming = std::shared_ptr<fdf::Namespace>(context.take_incoming());
++  zx::result pdev_client = incoming->Connect<fuchsia_hardware_platform_device::Service::Device>();
++  if (pdev_client.is_error()) {
++    fdf::error("connect pdev: {}", pdev_client);
++    return pdev_client.take_error();
++  }
++  fdf::PDev pdev{std::move(*pdev_client)};
++
++  for (uint32_t i = 0; i < 4; i++) {
++    zx::result mmio = pdev.MapMmio(i);
++    if (mmio.is_error()) {
++      fdf::error("map mmio {}: {}", i, mmio);
++      return mmio.take_error();
++    }
++    std::optional<fdf::MmioBuffer>* slot[] = {&usb_mmio_, &phy_mmio_, &infra_mmio_, &topck_mmio_};
++    slot[i]->emplace(std::move(*mmio));
++  }
++  zx::result irq = pdev.GetInterrupt(0, 0);
++  if (irq.is_error()) {
++    fdf::error("get interrupt: {}", irq);
++    return irq.take_error();
++  }
++  irq_ = std::move(*irq);
++
++  // Clocks first: reading a gated MediaTek peripheral can stall the bus.
++  InitClocks();
++  fdf::info("mt-musb: HWVERS {:#x} EPINFO {:#x} RAMINFO {:#x} POWER {:#x} DEVCTL {:#x}",
++            usb().Read16(kHwVers), usb().Read8(kEpInfo), usb().Read8(kRamInfo),
++            usb().Read8(kPower), usb().Read8(kDevCtl));
++
++  for (uint8_t i = 1; i < kNumEps; i++) {
++    in_eps_[i].emplace(this, i, true);
++    out_eps_[i].emplace(this, i, false);
++  }
++
++  zx::result irq_disp = fdf::SynchronizedDispatcher::Create(
++      fdf::SynchronizedDispatcher::Options::kAllowSyncCalls, "mt-musb-irq",
++      [this](fdf_dispatcher_t*) { irq_thread_stopped_.Signal(); });
++  if (irq_disp.is_error()) {
++    return irq_disp.take_error();
++  }
++  irq_dispatcher_ = std::move(*irq_disp);
++
++  zx::result result = outgoing()->AddService<fdci::UsbDciService>(fdci::UsbDciService::InstanceHandler({
++      .device = bindings_.CreateHandler(this, dispatcher(), fidl::kIgnoreBindingClosure),
++  }));
++  if (result.is_error()) {
++    fdf::error("add service: {}", result);
++    return result.take_error();
++  }
++
++  std::vector props{
++      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_VID,
++                         bind_fuchsia_mediatek_platform::BIND_PLATFORM_DEV_VID_MEDIATEK),
++      fdf::MakeProperty2(bind_fuchsia::PLATFORM_DEV_DID,
++                         bind_fuchsia_mediatek_platform::BIND_PLATFORM_DEV_DID_MUSB_PERIPHERAL),
++      fdf::MakeProperty2(bind_fuchsia::SERVICE, "fuchsia.hardware.usb.dci.UsbDciService"),
++  };
++  std::vector offers = {fdf::MakeOffer2<fdci::UsbDciService>()};
++  // The child must not reuse the driver/pdev name "mt-musb": the parent node is
++  // already named that, and two driver components with the same name in the
++  // boot-drivers collection make component_manager reject the UsbDciService
++  // offer as a dependency cycle (attempt 26, fuchsia-lagos/docs/17).
++  zx::result child = AddChild("mt-musb-dci", props, offers);
++  if (child.is_error()) {
++    fdf::error("add child: {}", child);
++    return child.take_error();
++  }
++  child_.Bind(std::move(*child));
++  fdf::info("mt-musb: started, waiting for usb-peripheral");
++  return zx::ok();
++}
++
++void MtMusb::Stop(fdf::StopCompleter completer) {
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    if (usb_mmio_) {
++      usb().Write8(0, kPower);  // drop the D+ pull-up
++    }
++    running_ = false;
++  }
++  irq_.destroy();
++  if (irq_dispatcher_.get()) {
++    irq_dispatcher_.ShutdownAsync();
++    irq_thread_stopped_.Wait();
++  }
++  completer(zx::ok());
++}
++
++void MtMusb::InitClocks() {
++  // CLK_IFR_ICUSB and CLK_TOP_USB_TOP_SEL (parent univpll3_d4); idempotent.
++  auto& infra = *infra_mmio_;
++  auto& top = *topck_mmio_;
++  const uint32_t cg = infra.Read32(kInfraCg0Sta);
++  const uint32_t cfg5 = top.Read32(kTopClkCfg5);
++  infra.Write32(kIcUsbBit, kInfraCg0Clr);
++  if ((cfg5 & (1u << 23)) || !(cfg5 & (1u << 16))) {
++    top.Write32((1u << 23) | (1u << 16), kTopClkCfg5Clr);
++    top.Write32(1u << 16, kTopClkCfg5Set);
++    top.Write32(1u << 22, kTopClkCfgUpdate);
++  }
++  zx::nanosleep(zx::deadline_after(zx::msec(10)));
++  fdf::info("mt-musb: clocks CG0 {:#x}->{:#x} CLK_CFG_5 {:#x}->{:#x}", cg,
++            infra.Read32(kInfraCg0Sta), cfg5, top.Read32(kTopClkCfg5));
++}
++
++void MtMusb::InitPhy() {
++  // MediaTek mt6768 usb_phy_recover() + set_usb_phy_mode(device), see docs/17.
++  auto& p = phy();
++  auto clr = [&p](uint32_t off, uint32_t bits) { p.Write32(p.Read32(off) & ~bits, off); };
++  auto set = [&p](uint32_t off, uint32_t bits) { p.Write32(p.Read32(off) | bits, off); };
++  zx::nanosleep(zx::deadline_after(zx::usec(50)));
++  clr(kUsbPhyAcr3, 1u << 12);                    // PUPD_BIST_EN
++  clr(kU2PhyDtm0, 1u << 26);                     // FORCE_UART_EN
++  clr(kU2PhyDtm1, 1u << 16);                     // RG_UART_EN
++  clr(kU2PhyAcr4, (1u << 9) | (1u << 8));        // GPIO_CTL, GPIO_MODE
++  clr(kU2PhyDtm0, 1u << 18);                     // FORCE_SUSPENDM
++  clr(kU2PhyDtm0, (1u << 7) | (1u << 6) | (3u << 4) | (1u << 2) | (0xfu << 10));
++  clr(kU2PhyDtm0, (1u << 20) | (1u << 21) | (1u << 19) | (1u << 17) | (1u << 23));
++  clr(kUsbPhyAcr6, 1u << 23);                    // BC11_SW_EN
++  set(kUsbPhyAcr6, 1u << 20);                    // OTG_VBUSCMP_EN
++  p.Write32((p.Read32(kUsbPhyAcr6) & ~(0xffu << 24)) | (0x40u << 24), kUsbPhyAcr6);  // PHY_REV
++  zx::nanosleep(zx::deadline_after(zx::usec(800)));
++  // Device role with VBUS/session forced valid (no charger/extcon driver).
++  clr(kU2PhyDtm1, 1u << 4);
++  set(kU2PhyDtm1, 0x2f);
++  set(kU2PhyDtm1, 0x3f00);
++  // Tuning from the stock devicetree; slew rate default (no frequency meter).
++  p.Write32((p.Read32(kUsbPhyAcr5) & ~(7u << 12)) | (4u << 12), kUsbPhyAcr5);
++  p.Write32((p.Read32(kUsbPhyAcr6) & ~(0xfu << 4)) | (7u << 4), kUsbPhyAcr6);
++  p.Write32((p.Read32(kUsbPhyAcr1) & ~((7u << 12) | (7u << 8))) | (7u << 12) | (7u << 8),
++            kUsbPhyAcr1);
++  fdf::info("mt-musb: PHY ACR6 {:#x} DTM0 {:#x} DTM1 {:#x}", p.Read32(kUsbPhyAcr6),
++            p.Read32(kU2PhyDtm0), p.Read32(kU2PhyDtm1));
++}
++
++void MtMusb::SelectEp(uint8_t ep_num) { usb().Write8(ep_num, kIndex); }
++
++void MtMusb::InitCore() {
++  auto& u = usb();
++  u.Write8(0, kPower);
++  u.Write8(0, kFaddr);
++  u.Write8(kPowerReset, kPower);
++  zx::nanosleep(zx::deadline_after(zx::usec(10)));
++  u.Write8(0, kPower);
++  zx::nanosleep(zx::deadline_after(zx::usec(100)));
++  u.Write8(0x80, kDevCtl);  // B-device
++
++  u.Write8(0, kIntrUsbE);
++  u.Write16(0, kIntrTxE);
++  u.Write16(0, kIntrRxE);
++  u.Write16(0xffff, kIntrRx);
++  u.Write16(0xffff, kIntrTx);
++  u.Write8(0xef, kIntrUsb);
++  u.Write16(0xffff, kTxTogEn);
++  u.Write16(0xffff, kRxTogEn);
++
++  // FIFO RAM layout: ep0 uses the first 64 bytes, then one 512-byte FIFO per
++  // direction for ep1..kNumEps-1 (5 KB of the 8 KB).
++  uint16_t addr = kEp0MaxPacket / 8;
++  for (uint8_t i = 1; i < kNumEps; i++) {
++    SelectEp(i);
++    u.Write16(addr, kTxFifoAdd);
++    u.Write8(FifoSizeCode(kFifoBytes), kTxFifoSz);
++    addr = static_cast<uint16_t>(addr + kFifoBytes / 8);
++    u.Write16(addr, kRxFifoAdd);
++    u.Write8(FifoSizeCode(kFifoBytes), kRxFifoSz);
++    addr = static_cast<uint16_t>(addr + kFifoBytes / 8);
++  }
++  SelectEp(0);
++
++  u.Write16(0x0001, kIntrTxE);  // ep0
++  u.Write8(kUsbIntReset | kUsbIntDiscon | kUsbIntSuspend | kUsbIntResume, kIntrUsbE);
++  u.Write32(kL1Tx | kL1Rx | kL1UsbCom, kL1IntM);
++  ep0_state_ = Ep0State::kIdle;
++  pending_address_.reset();
++  // Soft-connect: the host sees the D+ pull-up and starts enumerating.
++  u.Write8(kPowerEnSuspend | kPowerHsEnab | kPowerSoftConn, kPower);
++}
++
++void MtMusb::StartController(StartControllerCompleter::Sync& completer) {
++  fdf::info("mt-musb: StartController");
++  InitPhy();
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    InitCore();
++    running_ = true;
++  }
++  zx_status_t s = async::PostTask(irq_dispatcher_.async_dispatcher(), [this]() { IrqLoop(); });
++  if (s != ZX_OK) {
++    completer.Reply(zx::error(s));
++    return;
++  }
++  fdf::info("mt-musb: soft-connect on, POWER {:#x} DEVCTL {:#x}", usb().Read8(kPower),
++            usb().Read8(kDevCtl));
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::StopController(StopControllerCompleter::Sync& completer) {
++  SetConnected(false);
++  std::lock_guard<std::mutex> lock(hw_lock_);
++  usb().Write8(0, kPower);
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::IrqLoop() {
++  uint32_t logged = 0;
++  while (true) {
++    zx_status_t s = irq_.wait(nullptr);
++    if (s != ZX_OK) {
++      fdf::info("mt-musb: irq wait ended: {}", zx_status_get_string(s));
++      return;
++    }
++    uint32_t l1;
++    uint8_t usbint;
++    uint16_t tx, rx;
++    {
++      std::lock_guard<std::mutex> lock(hw_lock_);
++      auto& u = usb();
++      l1 = u.Read32(kL1Ints) & u.Read32(kL1IntM);
++      usbint = u.Read8(kIntrUsb) & u.Read8(kIntrUsbE);
++      tx = u.Read16(kIntrTx) & u.Read16(kIntrTxE);
++      rx = u.Read16(kIntrRx) & u.Read16(kIntrRxE);
++      // MediaTek: interrupt status is write-1-to-clear.
++      if (usbint) u.Write8(usbint, kIntrUsb);
++      if (tx) u.Write16(tx, kIntrTx);
++      if (rx) u.Write16(rx, kIntrRx);
++    }
++    if (logged < 12) {
++      logged++;
++      fdf::info("mt-musb: irq L1 {:#x} USB {:#x} TX {:#x} RX {:#x}", l1, usbint, tx, rx);
++    }
++    if (usbint & kUsbIntReset) {
++      HandleBusReset();
++    }
++    if (usbint & kUsbIntDiscon) {
++      fdf::info("mt-musb: disconnect");
++      SetConnected(false);
++    }
++    if (tx & 1) {
++      HandleEp0();
++    }
++    for (uint8_t i = 1; i < kNumEps; i++) {
++      if (tx & (1u << i)) {
++        HandleTx(i);
++      }
++      if (rx & (1u << i)) {
++        HandleRx(i);
++      }
++    }
++    irq_.ack();
++  }
++}
++
++void MtMusb::HandleBusReset() {
++  bool hs;
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    usb().Write8(0, kFaddr);
++    SelectEp(0);
++    ep0_state_ = Ep0State::kIdle;
++    pending_address_.reset();
++    hs = usb().Read8(kPower) & kPowerHsMode;
++  }
++  fdf::info("mt-musb: bus reset, {} speed", hs ? "high" : "full");
++  SetConnected(true);
++  if (dci_intf_.is_valid()) {
++    fidl::Arena arena;
++    auto r = dci_intf_.buffer(arena)->SetSpeed(hs ? fdescriptor::wire::UsbSpeed::kHigh
++                                                  : fdescriptor::wire::UsbSpeed::kFull);
++    if (!r.ok()) {
++      fdf::error("SetSpeed: {}", r.status_string());
++    }
++  }
++}
++
++void MtMusb::SetConnected(bool connected) {
++  if (connected_.exchange(connected) == connected) {
++    return;
++  }
++  if (dci_intf_.is_valid()) {
++    fidl::Arena arena;
++    auto r = dci_intf_.buffer(arena)->SetConnected(connected);
++    if (!r.ok()) {
++      fdf::error("SetConnected: {}", r.status_string());
++    }
++  }
++  if (!connected) {
++    for (uint8_t i = 1; i < kNumEps; i++) {
++      in_eps_[i]->FailAll(ZX_ERR_IO_NOT_PRESENT);
++      out_eps_[i]->FailAll(ZX_ERR_IO_NOT_PRESENT);
++    }
++  }
++}
++
++void MtMusb::HandleEp0() {
++  std::optional<fdescriptor::wire::UsbSetup> setup;
++  std::optional<std::pair<fdescriptor::wire::UsbSetup, std::vector<uint8_t>>> out_done;
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    auto& u = usb();
++    SelectEp(0);
++    uint16_t csr = u.Read16(kTxCsr);
++    if (csr & kCsr0SentStall) {
++      u.Write16(csr & ~kCsr0SentStall, kTxCsr);
++      ep0_state_ = Ep0State::kIdle;
++      csr = u.Read16(kTxCsr);
++    }
++    if (csr & kCsr0SetupEnd) {
++      u.Write16(kCsr0SvdSetupEnd, kTxCsr);
++      ep0_state_ = Ep0State::kIdle;
++      csr = u.Read16(kTxCsr);
++    }
++    switch (ep0_state_) {
++      case Ep0State::kStatus:
++        // The status stage of the previous transfer is done.
++        if (pending_address_) {
++          u.Write8(*pending_address_, kFaddr);
++          fdf::info("mt-musb: address {}", *pending_address_);
++          pending_address_.reset();
++        }
++        ep0_state_ = Ep0State::kIdle;
++        break;
++      case Ep0State::kDataIn:
++        if (!(csr & kCsr0TxPktRdy)) {
++          Ep0SendNext();
++        }
++        return;
++      case Ep0State::kDataOut:
++        if (csr & kCsr0RxPktRdy) {
++          const uint16_t count = u.Read16(kRxCount);
++          const size_t old = ep0_data_.size();
++          ep0_data_.resize(old + count);
++          FifoRead(0, ep0_data_.data() + old, count);
++          if (ep0_data_.size() >= ep0_setup_.w_length || count < kEp0MaxPacket) {
++            out_done.emplace(ep0_setup_, std::move(ep0_data_));
++            ep0_data_.clear();
++          } else {
++            u.Write16(kCsr0SvdRxPktRdy, kTxCsr);
++            return;
++          }
++        } else {
++          return;
++        }
++        break;
++      case Ep0State::kIdle:
++        break;
++    }
++    if (!out_done && ep0_state_ == Ep0State::kIdle && (csr & kCsr0RxPktRdy)) {
++      const uint16_t count = u.Read16(kRxCount);
++      if (count != sizeof(fdescriptor::wire::UsbSetup)) {
++        std::vector<uint8_t> junk(count);
++        FifoRead(0, junk.data(), count);
++        u.Write16(kCsr0SvdRxPktRdy | kCsr0SendStall, kTxCsr);
++        return;
++      }
++      uint8_t raw[8];
++      FifoRead(0, raw, sizeof(raw));
++      fdescriptor::wire::UsbSetup s;
++      s.bm_request_type = raw[0];
++      s.b_request = raw[1];
++      s.w_value = static_cast<uint16_t>(raw[2] | (raw[3] << 8));
++      s.w_index = static_cast<uint16_t>(raw[4] | (raw[5] << 8));
++      s.w_length = static_cast<uint16_t>(raw[6] | (raw[7] << 8));
++      ep0_setup_ = s;
++      setup = s;
++    }
++  }
++  if (out_done) {
++    std::vector<uint8_t> unused;
++    zx_status_t s = DoControl(out_done->first, out_done->second, &unused);
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    SelectEp(0);
++    if (s == ZX_OK) {
++      usb().Write16(kCsr0SvdRxPktRdy | kCsr0DataEnd, kTxCsr);
++      ep0_state_ = Ep0State::kStatus;
++    } else {
++      usb().Write16(kCsr0SvdRxPktRdy | kCsr0SendStall, kTxCsr);
++      ep0_state_ = Ep0State::kIdle;
++    }
++    return;
++  }
++  if (setup) {
++    HandleSetup(*setup);
++  }
++}
++
++void MtMusb::HandleSetup(const fdescriptor::wire::UsbSetup& setup) {
++  const bool is_in = setup.bm_request_type & 0x80;
++  const uint16_t len = setup.w_length;
++
++  if (setup.bm_request_type == 0x00 && setup.b_request == 0x05) {  // SET_ADDRESS
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    pending_address_ = static_cast<uint8_t>(setup.w_value & 0x7f);
++    SelectEp(0);
++    usb().Write16(kCsr0SvdRxPktRdy | kCsr0DataEnd, kTxCsr);
++    ep0_state_ = Ep0State::kStatus;
++    return;
++  }
++  if (!is_in && len > 0) {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    ep0_data_.clear();
++    SelectEp(0);
++    usb().Write16(kCsr0SvdRxPktRdy, kTxCsr);
++    ep0_state_ = Ep0State::kDataOut;
++    return;
++  }
++
++  std::vector<uint8_t> read;
++  zx_status_t s = DoControl(setup, {}, &read);
++  std::lock_guard<std::mutex> lock(hw_lock_);
++  SelectEp(0);
++  if (s != ZX_OK) {
++    usb().Write16(kCsr0SvdRxPktRdy | kCsr0SendStall, kTxCsr);
++    ep0_state_ = Ep0State::kIdle;
++    return;
++  }
++  if (is_in && len > 0) {
++    if (read.size() > len) {
++      read.resize(len);
++    }
++    ep0_data_ = std::move(read);
++    ep0_offset_ = 0;
++    usb().Write16(kCsr0SvdRxPktRdy, kTxCsr);
++    ep0_state_ = Ep0State::kDataIn;
++    Ep0SendNext();
++  } else {
++    usb().Write16(kCsr0SvdRxPktRdy | kCsr0DataEnd, kTxCsr);
++    ep0_state_ = Ep0State::kStatus;
++  }
++}
++
++void MtMusb::Ep0SendNext() {
++  const size_t remaining = ep0_data_.size() - ep0_offset_;
++  const size_t chunk = std::min<size_t>(remaining, kEp0MaxPacket);
++  FifoWrite(0, ep0_data_.data() + ep0_offset_, chunk);
++  ep0_offset_ += chunk;
++  const bool last = chunk < kEp0MaxPacket || ep0_offset_ >= ep0_setup_.w_length;
++  SelectEp(0);
++  usb().Write16(kCsr0TxPktRdy | (last ? kCsr0DataEnd : 0), kTxCsr);
++  if (last) {
++    ep0_state_ = Ep0State::kStatus;
++  }
++}
++
++zx_status_t MtMusb::DoControl(const fdescriptor::wire::UsbSetup& setup,
++                              const std::vector<uint8_t>& write, std::vector<uint8_t>* read) {
++  if (!dci_intf_.is_valid()) {
++    return ZX_ERR_BAD_STATE;
++  }
++  fidl::Arena arena;
++  fdescriptor::wire::UsbSetup wsetup = setup;
++  auto w = fidl::VectorView<uint8_t>::FromExternal(const_cast<uint8_t*>(write.data()), write.size());
++  auto result = dci_intf_.buffer(arena)->Control(wsetup, w);
++  if (!result.ok()) {
++    fdf::error("Control: {}", result.status_string());
++    return ZX_ERR_INTERNAL;
++  }
++  if (result->is_error()) {
++    return result->error_value();
++  }
++  auto data = result.value()->read.get();
++  read->assign(data.begin(), data.end());
++  return ZX_OK;
++}
++
++void MtMusb::FifoWrite(uint8_t ep_num, const uint8_t* data, size_t len) {
++  auto& u = usb();
++  size_t i = 0;
++  for (; i + 4 <= len; i += 4) {
++    uint32_t v;
++    memcpy(&v, data + i, 4);
++    u.Write32(v, Fifo(ep_num));
++  }
++  for (; i < len; i++) {
++    u.Write8(data[i], Fifo(ep_num));
++  }
++}
++
++void MtMusb::FifoRead(uint8_t ep_num, uint8_t* data, size_t len) {
++  auto& u = usb();
++  size_t i = 0;
++  for (; i + 4 <= len; i += 4) {
++    uint32_t v = u.Read32(Fifo(ep_num));
++    memcpy(data + i, &v, 4);
++  }
++  for (; i < len; i++) {
++    data[i] = u.Read8(Fifo(ep_num));
++  }
++}
++
++std::optional<std::pair<frequest::Request, size_t>> MtMusb::PumpTx(Endpoint* ep) {
++  if (!running_ || !ep->enabled) {
++    return std::nullopt;
++  }
++  auto& u = usb();
++  SelectEp(ep->ep_num());
++  const uint16_t csr = u.Read16(kTxCsr);
++  if (csr & kTxCsrTxPktRdy) {
++    return std::nullopt;  // previous packet still in the FIFO
++  }
++  if (ep->current && ep->offset >= ep->length && !ep->zlp_pending) {
++    std::pair<frequest::Request, size_t> done{std::move(*ep->current), ep->length};
++    ep->current.reset();
++    return done;
++  }
++  if (!ep->current) {
++    if (ep->queued.empty()) {
++      return std::nullopt;
++    }
++    ep->current = std::move(ep->queued.front());
++    ep->queued.pop();
++    if (!ep->Gather(*ep->current, ep->buf)) {
++      std::pair<frequest::Request, size_t> bad{std::move(*ep->current), SIZE_MAX};
++      ep->current.reset();
++      return bad;
++    }
++    ep->length = ep->buf.size();
++    ep->offset = 0;
++    ep->zlp_pending = (ep->length % ep->max_packet) == 0;
++  }
++  const size_t chunk = std::min<size_t>(ep->length - ep->offset, ep->max_packet);
++  FifoWrite(ep->ep_num(), ep->buf.data() + ep->offset, chunk);
++  ep->offset += chunk;
++  if (chunk < ep->max_packet) {
++    ep->zlp_pending = false;
++  }
++  SelectEp(ep->ep_num());
++  u.Write16(static_cast<uint16_t>((csr & ~(kTxCsrUnderRun | kTxCsrSentStall)) | kTxCsrTxPktRdy),
++            kTxCsr);
++  return std::nullopt;
++}
++
++std::optional<std::pair<frequest::Request, size_t>> MtMusb::PumpRx(Endpoint* ep) {
++  if (!running_ || !ep->enabled) {
++    return std::nullopt;
++  }
++  auto& u = usb();
++  SelectEp(ep->ep_num());
++  const uint16_t csr = u.Read16(kRxCsr);
++  if (!(csr & kRxCsrRxPktRdy)) {
++    return std::nullopt;
++  }
++  if (!ep->current) {
++    if (ep->queued.empty()) {
++      ep->rx_waiting = true;  // leave the packet in the FIFO until a request arrives
++      return std::nullopt;
++    }
++    ep->current = std::move(ep->queued.front());
++    ep->queued.pop();
++    ep->length = Endpoint::RequestLength(*ep->current);
++    ep->buf.clear();
++  }
++  ep->rx_waiting = false;
++  const uint16_t count = u.Read16(kRxCount);
++  const size_t room = ep->length - ep->buf.size();
++  const size_t keep = std::min<size_t>(count, room);
++  const size_t old = ep->buf.size();
++  ep->buf.resize(old + keep);
++  FifoRead(ep->ep_num(), ep->buf.data() + old, keep);
++  for (size_t i = keep; i < count; i++) {
++    (void)u.Read8(Fifo(ep->ep_num()));  // overflow: drop
++  }
++  SelectEp(ep->ep_num());
++  u.Write16(static_cast<uint16_t>(csr & ~(kRxCsrRxPktRdy | kRxCsrOverRun)), kRxCsr);
++  if (count < ep->max_packet || ep->buf.size() >= ep->length) {
++    const size_t actual = ep->buf.size();
++    if (!ep->Scatter(*ep->current, ep->buf)) {
++      std::pair<frequest::Request, size_t> bad{std::move(*ep->current), SIZE_MAX};
++      ep->current.reset();
++      return bad;
++    }
++    std::pair<frequest::Request, size_t> done{std::move(*ep->current), actual};
++    ep->current.reset();
++    return done;
++  }
++  return std::nullopt;
++}
++
++void MtMusb::HandleTx(uint8_t ep_num) { KickEndpoint(&*in_eps_[ep_num]); }
++
++void MtMusb::HandleRx(uint8_t ep_num) { KickEndpoint(&*out_eps_[ep_num]); }
++
++void MtMusb::KickEndpoint(Endpoint* ep) {
++  while (true) {
++    std::optional<std::pair<frequest::Request, size_t>> done;
++    {
++      std::lock_guard<std::mutex> lock(hw_lock_);
++      done = ep->is_in() ? PumpTx(ep) : PumpRx(ep);
++    }
++    if (!done) {
++      return;
++    }
++    if (done->second == SIZE_MAX) {
++      ep->Complete(std::move(done->first), ZX_ERR_INVALID_ARGS, 0);
++    } else {
++      ep->Complete(std::move(done->first), ZX_OK, done->second);
++    }
++  }
++}
++
++void MtMusb::CancelEndpoint(Endpoint* ep) {
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    if (running_ && ep->enabled) {
++      SelectEp(ep->ep_num());
++      if (ep->is_in()) {
++        usb().Write16(kTxCsrMode | kTxCsrFlushFifo, kTxCsr);
++      } else {
++        usb().Write16(kRxCsrFlushFifo, kRxCsr);
++      }
++    }
++  }
++  ep->FailAll(ZX_ERR_CANCELED);
++}
++
++Endpoint* MtMusb::LookupEp(uint8_t ep_addr) {
++  const uint8_t num = ep_addr & 0x0f;
++  if (num == 0 || num >= kNumEps) {
++    return nullptr;
++  }
++  return (ep_addr & 0x80) ? &*in_eps_[num] : &*out_eps_[num];
++}
++
++void MtMusb::ConnectToEndpoint(ConnectToEndpointRequest& request,
++                               ConnectToEndpointCompleter::Sync& completer) {
++  Endpoint* ep = LookupEp(request.ep_addr());
++  if (ep == nullptr) {
++    fdf::error("ConnectToEndpoint: bad address {:#x}", request.ep_addr());
++    completer.Reply(fit::as_error(ZX_ERR_IO_NOT_PRESENT));
++    return;
++  }
++  ep->Connect(dispatcher(), std::move(request.ep()));
++  completer.Reply(fit::ok());
++}
++
++void MtMusb::SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) {
++  if (dci_intf_.is_valid()) {
++    completer.Reply(zx::error(ZX_ERR_ALREADY_BOUND));
++    return;
++  }
++  dci_intf_.Bind(std::move(request.interface()));
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::ConfigureEndpoint(ConfigureEndpointRequest& request,
++                               ConfigureEndpointCompleter::Sync& completer) {
++  const auto& desc = request.ep_descriptor();
++  Endpoint* ep = LookupEp(desc.b_endpoint_address());
++  if (ep == nullptr) {
++    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
++    return;
++  }
++  const uint16_t maxp = desc.w_max_packet_size() & 0x7ff;
++  if (maxp == 0 || maxp > kFifoBytes) {
++    completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
++    return;
++  }
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    auto& u = usb();
++    SelectEp(ep->ep_num());
++    if (ep->is_in()) {
++      u.Write16(maxp, kTxMaxP);
++      u.Write16(kTxCsrMode | kTxCsrClrDataTog | kTxCsrFlushFifo, kTxCsr);
++      u.Write16(kTxCsrMode | kTxCsrClrDataTog | kTxCsrFlushFifo, kTxCsr);
++      u.Write16(static_cast<uint16_t>(u.Read16(kIntrTxE) | (1u << ep->ep_num())), kIntrTxE);
++    } else {
++      u.Write16(maxp, kRxMaxP);
++      u.Write16(kRxCsrClrDataTog | kRxCsrFlushFifo, kRxCsr);
++      u.Write16(kRxCsrClrDataTog | kRxCsrFlushFifo, kRxCsr);
++      u.Write16(static_cast<uint16_t>(u.Read16(kIntrRxE) | (1u << ep->ep_num())), kIntrRxE);
++    }
++    ep->max_packet = maxp;
++    ep->type = desc.bm_attributes() & 0x3;
++    ep->enabled = true;
++  }
++  fdf::info("mt-musb: ep {:#x} configured, type {} maxp {}", desc.b_endpoint_address(),
++            desc.bm_attributes() & 0x3, maxp);
++  completer.Reply(zx::ok());
++  KickEndpoint(ep);
++}
++
++void MtMusb::DisableEndpoint(DisableEndpointRequest& request,
++                             DisableEndpointCompleter::Sync& completer) {
++  Endpoint* ep = LookupEp(request.ep_address());
++  if (ep == nullptr) {
++    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
++    return;
++  }
++  {
++    std::lock_guard<std::mutex> lock(hw_lock_);
++    auto& u = usb();
++    if (ep->is_in()) {
++      u.Write16(static_cast<uint16_t>(u.Read16(kIntrTxE) & ~(1u << ep->ep_num())), kIntrTxE);
++    } else {
++      u.Write16(static_cast<uint16_t>(u.Read16(kIntrRxE) & ~(1u << ep->ep_num())), kIntrRxE);
++    }
++    ep->enabled = false;
++  }
++  ep->FailAll(ZX_ERR_IO_NOT_PRESENT);
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::EndpointSetStall(EndpointSetStallRequest& request,
++                              EndpointSetStallCompleter::Sync& completer) {
++  Endpoint* ep = LookupEp(request.ep_address());
++  if (ep == nullptr) {
++    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
++    return;
++  }
++  std::lock_guard<std::mutex> lock(hw_lock_);
++  SelectEp(ep->ep_num());
++  if (ep->is_in()) {
++    usb().Write16(static_cast<uint16_t>(usb().Read16(kTxCsr) | kTxCsrSendStall), kTxCsr);
++  } else {
++    usb().Write16(static_cast<uint16_t>(usb().Read16(kRxCsr) | kRxCsrSendStall), kRxCsr);
++  }
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::EndpointClearStall(EndpointClearStallRequest& request,
++                                EndpointClearStallCompleter::Sync& completer) {
++  Endpoint* ep = LookupEp(request.ep_address());
++  if (ep == nullptr) {
++    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
++    return;
++  }
++  std::lock_guard<std::mutex> lock(hw_lock_);
++  SelectEp(ep->ep_num());
++  if (ep->is_in()) {
++    uint16_t csr = usb().Read16(kTxCsr) & ~(kTxCsrSendStall | kTxCsrSentStall);
++    usb().Write16(static_cast<uint16_t>(csr | kTxCsrClrDataTog), kTxCsr);
++  } else {
++    uint16_t csr = usb().Read16(kRxCsr) & ~(kRxCsrSendStall | kRxCsrSentStall);
++    usb().Write16(static_cast<uint16_t>(csr | kRxCsrClrDataTog), kRxCsr);
++  }
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) {
++  Endpoint* ep = LookupEp(request.ep_address());
++  if (ep == nullptr) {
++    completer.Reply(zx::error(ZX_ERR_INVALID_ARGS));
++    return;
++  }
++  CancelEndpoint(ep);
++  completer.Reply(zx::ok());
++}
++
++void MtMusb::GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) {
++  // usb-peripheral then falls back to legacy (sequential) endpoint allocation,
++  // which hands out 0x01.. and 0x81.. -- all within kNumEps.
++  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
++}
++
++void MtMusb::AllocEndpoint(AllocEndpointRequest& request,
++                           AllocEndpointCompleter::Sync& completer) {
++  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
++}
++
++void MtMusb::FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) {
++  completer.Reply(zx::error(ZX_ERR_NOT_SUPPORTED));
++}
++
++}  // namespace mt_musb
++
++FUCHSIA_DRIVER_EXPORT2(mt_musb::MtMusb);
+diff --git a/src/devices/usb/drivers/mt-musb/mt-musb.h b/src/devices/usb/drivers/mt-musb/mt-musb.h
+new file mode 100644
+index 00000000000..98c9727854e
+--- /dev/null
++++ b/src/devices/usb/drivers/mt-musb/mt-musb.h
+@@ -0,0 +1,209 @@
++// Copyright 2026 The Fuchsia Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style license that can be
++// found in the LICENSE file.
++
++#ifndef SRC_DEVICES_USB_DRIVERS_MT_MUSB_MT_MUSB_H_
++#define SRC_DEVICES_USB_DRIVERS_MT_MUSB_MT_MUSB_H_
++
++// [fuchsia-lagos] USB device-mode (DCI) driver for the MediaTek MUSB controller
++// of the MT6768 (Moto G06 "lagos"). Programmed I/O only: every byte goes
++// through the endpoint FIFOs, so no DMA, BTI or 32-bit address limits.
++// Register-level behaviour follows the old Fuchsia MT8167 driver
++// (mt-musb-peripheral, 2021) and MediaTek's mt6768 usb20 sources; see
++// fuchsia-lagos/docs/17.
++
++#include <fidl/fuchsia.hardware.usb.dci/cpp/fidl.h>
++#include <fidl/fuchsia.hardware.usb.descriptor/cpp/fidl.h>
++#include <fidl/fuchsia.hardware.usb.endpoint/cpp/fidl.h>
++#include <fidl/fuchsia.hardware.usb.request/cpp/fidl.h>
++#include <lib/driver/component/cpp/driver_base2.h>
++#include <lib/driver/mmio/cpp/mmio.h>
++#include <lib/driver/platform-device/cpp/pdev.h>
++#include <lib/fdf/cpp/dispatcher.h>
++#include <lib/sync/cpp/completion.h>
++#include <lib/zx/interrupt.h>
++#include <lib/zx/vmo.h>
++
++#include <map>
++#include <mutex>
++#include <optional>
++#include <queue>
++#include <vector>
++
++namespace mt_musb {
++
++namespace fdci = fuchsia_hardware_usb_dci;
++namespace fdescriptor = fuchsia_hardware_usb_descriptor;
++namespace fendpoint = fuchsia_hardware_usb_endpoint;
++namespace frequest = fuchsia_hardware_usb_request;
++
++// Hardware endpoints used: ep0 + 1..kNumEps-1 in each direction. The MT6768
++// has 8 KB of FIFO RAM, so only a few 512-byte single-buffered FIFOs fit.
++constexpr uint8_t kNumEps = 6;
++constexpr uint16_t kEp0MaxPacket = 64;
++constexpr uint16_t kFifoBytes = 512;
++
++class MtMusb;
++
++// One data endpoint (not ep0). Serves fuchsia.hardware.usb.endpoint.Endpoint
++// for usb-peripheral's function drivers. Registered VMOs are mapped (not
++// pinned) because the controller is driven by PIO.
++class Endpoint : public fidl::Server<fendpoint::Endpoint> {
++ public:
++  Endpoint(MtMusb* musb, uint8_t ep_num, bool is_in) : musb_(musb), ep_num_(ep_num), is_in_(is_in) {}
++  ~Endpoint() override;
++
++  void Connect(async_dispatcher_t* dispatcher, fidl::ServerEnd<fendpoint::Endpoint> server_end);
++
++  // fuchsia.hardware.usb.endpoint.Endpoint
++  void GetInfo(GetInfoCompleter::Sync& completer) override;
++  void RegisterVmos(RegisterVmosRequest& request, RegisterVmosCompleter::Sync& completer) override;
++  void UnregisterVmos(UnregisterVmosRequest& request,
++                      UnregisterVmosCompleter::Sync& completer) override;
++  void QueueRequests(QueueRequestsRequest& request,
++                     QueueRequestsCompleter::Sync& completer) override;
++  void CancelAll(CancelAllCompleter::Sync& completer) override;
++
++  // Fails every queued and in-flight request with `status`.
++  void FailAll(zx_status_t status);
++
++  uint8_t ep_num() const { return ep_num_; }
++  bool is_in() const { return is_in_; }
++
++ private:
++  friend class MtMusb;
++
++  struct MappedVmo {
++    zx::vmo vmo;
++    uintptr_t addr = 0;
++    size_t size = 0;
++  };
++
++  // Total payload length of a request.
++  static size_t RequestLength(const frequest::Request& req);
++  // Copies the request payload into `out` (IN direction).
++  bool Gather(const frequest::Request& req, std::vector<uint8_t>& out);
++  // Copies `in` back into the request buffers (OUT direction).
++  bool Scatter(frequest::Request& req, const std::vector<uint8_t>& in);
++  void Complete(frequest::Request req, zx_status_t status, size_t actual);
++
++  MtMusb* const musb_;
++  const uint8_t ep_num_;
++  const bool is_in_;
++
++  std::mutex vmo_lock_;
++  std::map<uint64_t, MappedVmo> vmos_ __TA_GUARDED(vmo_lock_);
++
++  std::mutex binding_lock_;
++  std::optional<fidl::ServerBindingRef<fendpoint::Endpoint>> binding_ __TA_GUARDED(binding_lock_);
++
++  // Transfer state, guarded by MtMusb::hw_lock_.
++  bool enabled = false;
++  uint16_t max_packet = 0;
++  uint8_t type = 0;
++  std::queue<frequest::Request> queued;
++  std::optional<frequest::Request> current;
++  std::vector<uint8_t> buf;
++  size_t length = 0;
++  size_t offset = 0;
++  bool zlp_pending = false;
++  bool rx_waiting = false;  // OUT: a packet sits in the FIFO with no request to take it.
++};
++
++class MtMusb : public fdf::DriverBase2, public fidl::Server<fdci::UsbDci> {
++ public:
++  MtMusb() : fdf::DriverBase2("mt-musb") {}
++
++  zx::result<> Start(fdf::DriverContext context) override;
++  void Stop(fdf::StopCompleter completer) override;
++
++  // fuchsia.hardware.usb.dci.UsbDci
++  void ConnectToEndpoint(ConnectToEndpointRequest& request,
++                         ConnectToEndpointCompleter::Sync& completer) override;
++  void SetInterface(SetInterfaceRequest& request, SetInterfaceCompleter::Sync& completer) override;
++  void StartController(StartControllerCompleter::Sync& completer) override;
++  void StopController(StopControllerCompleter::Sync& completer) override;
++  void ConfigureEndpoint(ConfigureEndpointRequest& request,
++                         ConfigureEndpointCompleter::Sync& completer) override;
++  void DisableEndpoint(DisableEndpointRequest& request,
++                       DisableEndpointCompleter::Sync& completer) override;
++  void EndpointSetStall(EndpointSetStallRequest& request,
++                        EndpointSetStallCompleter::Sync& completer) override;
++  void EndpointClearStall(EndpointClearStallRequest& request,
++                          EndpointClearStallCompleter::Sync& completer) override;
++  void CancelAll(CancelAllRequest& request, CancelAllCompleter::Sync& completer) override;
++  void GetHardwareInfo(GetHardwareInfoCompleter::Sync& completer) override;
++  void AllocEndpoint(AllocEndpointRequest& request,
++                     AllocEndpointCompleter::Sync& completer) override;
++  void FreeEndpoint(FreeEndpointRequest& request, FreeEndpointCompleter::Sync& completer) override;
++  void handle_unknown_method(fidl::UnknownMethodMetadata<fdci::UsbDci> metadata,
++                             fidl::UnknownMethodCompleter::Sync& completer) override {}
++
++  // Called by Endpoint with new requests.
++  void KickEndpoint(Endpoint* ep);
++  void CancelEndpoint(Endpoint* ep);
++
++ private:
++  friend class Endpoint;
++  enum class Ep0State { kIdle, kDataIn, kDataOut, kStatus };
++
++  Endpoint* LookupEp(uint8_t ep_addr);
++
++  void InitClocks();
++  void InitPhy();
++  void InitCore() __TA_REQUIRES(hw_lock_);
++  void IrqLoop();
++
++  void HandleBusReset() __TA_EXCLUDES(hw_lock_);
++  void HandleEp0() __TA_EXCLUDES(hw_lock_);
++  void HandleSetup(const fdescriptor::wire::UsbSetup& setup) __TA_EXCLUDES(hw_lock_);
++  void Ep0SendNext() __TA_REQUIRES(hw_lock_);
++  zx_status_t DoControl(const fdescriptor::wire::UsbSetup& setup, const std::vector<uint8_t>& write,
++                        std::vector<uint8_t>* read);
++  void SetConnected(bool connected);
++
++  void HandleTx(uint8_t ep_num) __TA_EXCLUDES(hw_lock_);
++  void HandleRx(uint8_t ep_num) __TA_EXCLUDES(hw_lock_);
++  // Starts/continues the transfer at the head of `ep`. Returns a finished
++  // request (to be completed outside hw_lock_) if one completed.
++  std::optional<std::pair<frequest::Request, size_t>> PumpTx(Endpoint* ep)
++      __TA_REQUIRES(hw_lock_);
++  std::optional<std::pair<frequest::Request, size_t>> PumpRx(Endpoint* ep)
++      __TA_REQUIRES(hw_lock_);
++
++  void FifoWrite(uint8_t ep_num, const uint8_t* data, size_t len) __TA_REQUIRES(hw_lock_);
++  void FifoRead(uint8_t ep_num, uint8_t* data, size_t len) __TA_REQUIRES(hw_lock_);
++  void SelectEp(uint8_t ep_num) __TA_REQUIRES(hw_lock_);
++
++  fdf::MmioBuffer& usb() { return *usb_mmio_; }
++  fdf::MmioBuffer& phy() { return *phy_mmio_; }
++
++  std::optional<fdf::MmioBuffer> usb_mmio_;
++  std::optional<fdf::MmioBuffer> phy_mmio_;
++  std::optional<fdf::MmioBuffer> infra_mmio_;
++  std::optional<fdf::MmioBuffer> topck_mmio_;
++  zx::interrupt irq_;
++
++  std::mutex hw_lock_;
++  bool running_ __TA_GUARDED(hw_lock_) = false;
++  Ep0State ep0_state_ __TA_GUARDED(hw_lock_) = Ep0State::kIdle;
++  fdescriptor::wire::UsbSetup ep0_setup_ __TA_GUARDED(hw_lock_) = {};
++  std::vector<uint8_t> ep0_data_ __TA_GUARDED(hw_lock_);
++  size_t ep0_offset_ __TA_GUARDED(hw_lock_) = 0;
++  std::optional<uint8_t> pending_address_ __TA_GUARDED(hw_lock_);
++
++  std::optional<Endpoint> in_eps_[kNumEps];
++  std::optional<Endpoint> out_eps_[kNumEps];
++
++  std::atomic<bool> connected_ = false;
++  fidl::WireSyncClient<fdci::UsbDciInterface> dci_intf_;
++  fidl::ServerBindingGroup<fdci::UsbDci> bindings_;
++  fidl::SyncClient<fuchsia_driver_framework::NodeController> child_;
++
++  fdf::SynchronizedDispatcher irq_dispatcher_;
++  libsync::Completion irq_thread_stopped_;
++};
++
++}  // namespace mt_musb
++
++#endif  // SRC_DEVICES_USB_DRIVERS_MT_MUSB_MT_MUSB_H_
+diff --git a/src/devices/usb/drivers/usb-peripheral/BUILD.gn b/src/devices/usb/drivers/usb-peripheral/BUILD.gn
+index f2f52f7b8ca..9b3efc61841 100644
+--- a/src/devices/usb/drivers/usb-peripheral/BUILD.gn
++++ b/src/devices/usb/drivers/usb-peripheral/BUILD.gn
+@@ -14,6 +14,7 @@ driver_bind_rules("usb_peripheral_bind") {
+   deps = [
+     "//src/devices/bind/fuchsia",
+     "//src/devices/bind/fuchsia.designware.platform",
++    "//src/devices/bind/fuchsia.mediatek.platform",
+     "//src/devices/bind/fuchsia.test.platform",
+     "//src/devices/bind/fuchsia.usb",
+   ]
+diff --git a/src/devices/usb/drivers/usb-peripheral/meta/usb-peripheral.bind b/src/devices/usb/drivers/usb-peripheral/meta/usb-peripheral.bind
+index 935031fc429..085a14d833d 100644
+--- a/src/devices/usb/drivers/usb-peripheral/meta/usb-peripheral.bind
++++ b/src/devices/usb/drivers/usb-peripheral/meta/usb-peripheral.bind
+@@ -10,6 +10,9 @@ if fuchsia.Service == "fuchsia.hardware.usb.dci.UsbDciService" {
+       fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC2,
+       fuchsia.designware.platform.BIND_PLATFORM_DEV_DID.DWC3,
+     }
++  } else if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_VID.MEDIATEK {
++    // [fuchsia-lagos] MT6768 MUSB (src/devices/usb/drivers/mt-musb).
++    fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.mediatek.platform.BIND_PLATFORM_DEV_DID.MUSB_PERIPHERAL;
+   } else if fuchsia.BIND_PLATFORM_DEV_VID == fuchsia.test.platform.BIND_PLATFORM_DEV_VID.TEST {
+     fuchsia.BIND_PLATFORM_DEV_PID == fuchsia.test.platform.BIND_PLATFORM_DEV_PID.USB;
+     fuchsia.BIND_PLATFORM_DEV_DID == fuchsia.test.platform.BIND_PLATFORM_DEV_DID.VIRTUAL_DEVICE;
 diff --git a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
-index 0f622fa45ca..a46eb658ae5 100644
+index 0f622fa45ca..fd25d3ff3c8 100644
 --- a/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 +++ b/zircon/kernel/arch/arm64/phys/boot-shim/linux-arm64-boot-shim.cc
 @@ -5,6 +5,7 @@
@@ -93,7 +1811,7 @@ index 0f622fa45ca..a46eb658ae5 100644
 +    ".balign 8\n"
 +    ".global lagos_min_dtb\n"
 +    "lagos_min_dtb:\n"
-+    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v6.dtb\"\n"
++    ".incbin \"/home/hen/Documentos/code/android/fuchsia/zircon/kernel/arch/arm64/phys/boot-shim/lagos-min-v7.dtb\"\n"
 +    ".global lagos_min_dtb_end\n"
 +    "lagos_min_dtb_end:\n"
 +    ".previous\n");
@@ -427,10 +2145,10 @@ index 95d8f298da9..809015bb5bc 100644
  /// Writes ICC_PMR_EL1, the interrupt priority mask.
  pub(super) fn write_pmr(val: u32) {
 diff --git a/zircon/kernel/kernel/mp.cc b/zircon/kernel/kernel/mp.cc
-index df739487fa6..2eface554ab 100644
+index df739487fa6..035362d64e4 100644
 --- a/zircon/kernel/kernel/mp.cc
 +++ b/zircon/kernel/kernel/mp.cc
-@@ -512,6 +512,130 @@ zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline) {
+@@ -512,6 +512,203 @@ zx_status_t mp_wait_for_all_cpus_ready(Deadline deadline) {
    return mp.ready_cpu_event.Wait(deadline);
  }
  
@@ -450,7 +2168,7 @@ index df739487fa6..2eface554ab 100644
 +    _v;                                                 \
 +  })
 +
-+void LagosSmpDiag(const char* when) {
++[[maybe_unused]] void LagosSmpDiag(const char* when) {
 +  printf("lagos[%s]: EL%lu DAIF %#lx ISR %#lx CNTFRQ %lu\n", when,
 +         (LAGOS_MRS(CurrentEL) >> 2) & 3, LAGOS_MRS(DAIF), LAGOS_MRS(ISR_EL1),
 +         LAGOS_MRS(CNTFRQ_EL0));
@@ -514,7 +2232,7 @@ index df739487fa6..2eface554ab 100644
 +         LAGOS_MRS(S3_0_C12_C12_2), LAGOS_MRS(ISR_EL1));
 +}
 +
-+void LagosIrqProbe() {
++[[maybe_unused]] void LagosIrqProbe() {
 +  void* p = nullptr;
 +  if (VmAspace::kernel_aspace()->AllocPhysical(
 +          "lagos-gicr0-rw", 0x20000, &p, PAGE_SIZE_SHIFT, 0x0c040000, 0,
@@ -555,13 +2273,86 @@ index df739487fa6..2eface554ab 100644
 +  __asm__ volatile("dsb sy; isb" ::: "memory");
 +  LAGOS_MSR(DAIF, daif);
 +}
++
++// [fuchsia-lagos] Attempt 25: USB first contact, before writing the MUSB driver.
++// Reads only always-on blocks first (infracfg_ao clock gates, topckgen mux,
++// sysirq polarity). The USB controller and PHY are only touched if both
++// their clocks are running, because reading a gated MediaTek peripheral can
++// stall the bus. If a clock is gated it is ungated with the idempotent
++// set/clr registers (what Linux's clock driver does) and re-checked.
++// Addresses from MediaTek's mt6768 clk/usb20 sources (fuchsia-lagos/docs/17).
++volatile uint8_t* LagosMapIo(const char* name, paddr_t pa, size_t len) {
++  void* p = nullptr;
++  if (VmAspace::kernel_aspace()->AllocPhysical(
++          name, len, &p, PAGE_SIZE_SHIFT, pa, 0,
++          ARCH_MMU_FLAG_UNCACHED_DEVICE | ARCH_MMU_FLAG_PERM_READ | ARCH_MMU_FLAG_PERM_WRITE) !=
++      ZX_OK) {
++    printf("lagos[usb]: cannot map %s\n", name);
++    return nullptr;
++  }
++  return static_cast<volatile uint8_t*>(p);
++}
++
++uint32_t LagosRd32(volatile uint8_t* b, size_t off) {
++  return *reinterpret_cast<volatile uint32_t*>(b + off);
++}
++void LagosWr32(volatile uint8_t* b, size_t off, uint32_t v) {
++  *reinterpret_cast<volatile uint32_t*>(b + off) = v;
++}
++
++void LagosUsbProbe() {
++  volatile uint8_t* infra = LagosMapIo("lagos-infracfg", 0x10001000, 0x1000);
++  volatile uint8_t* topck = LagosMapIo("lagos-topckgen", 0x10000000, 0x1000);
++  volatile uint8_t* intpol = LagosMapIo("lagos-sysirq", 0x0c53a000, 0x1000);
++  if (infra == nullptr || topck == nullptr || intpol == nullptr) {
++    return;
++  }
++  // CLK_IFR_ICUSB: infracfg_ao gate bit 8, status 0x90 (1 = gated), clr 0x84.
++  // CLK_TOP_USB_TOP_SEL: CLK_CFG_5 0x90 bit 23 = power down, bit 16 = parent.
++  uint32_t gate = LagosRd32(infra, 0x90);
++  uint32_t cfg5 = LagosRd32(topck, 0x90);
++  printf("lagos[usb]: infra CG0 %#x (ICUSB %s) CLK_CFG_5 %#x (usb_top %s, parent %u) INTPOL3 %#x\n",
++         gate, (gate & (1u << 8)) ? "GATED" : "on", cfg5, (cfg5 & (1u << 23)) ? "OFF" : "on",
++         (cfg5 >> 16) & 1, LagosRd32(intpol, 0x65c));
++  if (gate & (1u << 8)) {
++    LagosWr32(infra, 0x84, 1u << 8);
++  }
++  if (cfg5 & (1u << 23)) {
++    LagosWr32(topck, 0x98, 1u << 23);   // CLK_CFG_5_CLR: power the mux up
++    LagosWr32(topck, 0x04, 1u << 22);   // CLK_CFG_UPDATE
++  }
++  if ((gate | cfg5) & ((1u << 8) | (1u << 23))) {
++    gate = LagosRd32(infra, 0x90);
++    cfg5 = LagosRd32(topck, 0x90);
++    printf("lagos[usb]: after ungate: CG0 %#x CLK_CFG_5 %#x\n", gate, cfg5);
++    if ((gate & (1u << 8)) || (cfg5 & (1u << 23))) {
++      printf("lagos[usb]: clocks still off, not touching the controller\n");
++      return;
++    }
++  }
++  volatile uint8_t* phy = LagosMapIo("lagos-u2phy", 0x11cc0000, 0x1000);
++  if (phy == nullptr) {
++    return;
++  }
++  printf("lagos[usb]: PHY ACR1 %#x ACR6 %#x ACR4 %#x DTM0 %#x DTM1 %#x\n",
++         LagosRd32(phy, 0x804), LagosRd32(phy, 0x818), LagosRd32(phy, 0x820),
++         LagosRd32(phy, 0x868), LagosRd32(phy, 0x86c));
++  volatile uint8_t* musb = LagosMapIo("lagos-musb", 0x11200000, 0x1000);
++  if (musb == nullptr) {
++    return;
++  }
++  printf("lagos[usb]: MUSB FADDR %#x POWER %#x DEVCTL %#x HWVERS %#x EPINFO %#x RAMINFO %#x "
++         "L1INTS %#x L1INTM %#x\n",
++         musb[0x00], musb[0x01], musb[0x60], *reinterpret_cast<volatile uint16_t*>(musb + 0x6c),
++         musb[0x78], musb[0x79], LagosRd32(musb, 0xa0), LagosRd32(musb, 0xa4));
++}
 +}  // namespace
 +#endif
 +
  namespace {
  
  void mp_all_cpu_startup_sync_hook(unsigned int rl) {
-@@ -525,7 +649,37 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
+@@ -525,7 +722,35 @@ void mp_all_cpu_startup_sync_hook(unsigned int rl) {
    // the CPU silicon (something which can only be determined by the core itself
    // as it comes up).
    constexpr zx_duration_mono_t kCpuStartupTimeout = ZX_SEC(30);
@@ -573,8 +2364,7 @@ index df739487fa6..2eface554ab 100644
 +  zx_status_t status = ZX_ERR_TIMED_OUT;
 +  {
 +    const int max_count = static_cast<int>(arch_max_num_cpus());
-+    LagosSmpDiag("smp-wait");
-+    LagosIrqProbe();
++    LagosUsbProbe();
 +    const zx_instant_mono_t start = current_mono_time();
 +    bool second = false;
 +    while (current_mono_time() - start < ZX_SEC(15)) {
@@ -583,7 +2373,6 @@ index df739487fa6..2eface554ab 100644
 +        break;
 +      }
 +      if (!second && current_mono_time() - start > ZX_SEC(3)) {
-+        LagosSmpDiag("+3s");
 +        second = true;
 +      }
 +      arch::Yield();
@@ -818,10 +2607,10 @@ index 7dcc03863c6..723475edfd8 100644
    // This marks the interval between handoff from the boot loader (kZbiEntry)
    // and phys environment setup with identity-mapped memory management et al.
 diff --git a/zircon/kernel/platform/debug.cc b/zircon/kernel/platform/debug.cc
-index 71704a5a22a..e1a816a93da 100644
+index 71704a5a22a..04e01961691 100644
 --- a/zircon/kernel/platform/debug.cc
 +++ b/zircon/kernel/platform/debug.cc
-@@ -643,7 +643,216 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
+@@ -643,7 +643,217 @@ void UartDriverHandoffLate(const uart::all::Driver& serial) {
    }
  }
  
@@ -948,7 +2737,8 @@ index 71704a5a22a..e1a816a93da 100644
 +  if (LagosLineStarts("lagos: heartbeat")) {
 +    slot = 0;
 +  } else if (LagosLineStarts("lagos") || LagosLineHas("PANIC") || LagosLineHas("ASSERT") ||
-+             LagosLineHas("panic (")) {
++             LagosLineHas("panic (") || LagosLineHas("mt-musb") || LagosLineHas("usb-peripheral") ||
++             LagosLineHas("usb-cdc") || LagosLineHas("netsvc")) {
 +    slot = gLagosPinNext;
 +    gLagosPinNext = gLagosPinNext + 1 < kLagosPinSlots ? gLagosPinNext + 1 : 1;
 +  } else {
@@ -1038,7 +2828,7 @@ index 71704a5a22a..e1a816a93da 100644
    if (!platform_serial_enabled()) {
      return ZX_OK;
    }
-@@ -663,6 +872,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
+@@ -663,6 +873,7 @@ zx_status_t platform_dputs_thread(const char* str, size_t len) {
  }
  
  void platform_dputs_irq(const char* str, size_t len) {
@@ -1046,7 +2836,7 @@ index 71704a5a22a..e1a816a93da 100644
    if (!platform_serial_enabled()) {
      return;
    }
-@@ -749,6 +959,7 @@ int platform_pgetc(char* c) {
+@@ -749,6 +960,7 @@ int platform_pgetc(char* c) {
  }
  
  void platform_pputc(char c) {

@@ -20,7 +20,7 @@
 		 * debuglog dumper thread is never started); halt-on-panic keeps a panic
 		 * message on screen instead of rebooting via PSCI. debug_uart_poll (attempt
 		 * 19): the kernel drives the dw8250 UART by polling, no IRQ handler. docs/15. */
-		bootargs = "kernel.bypass-debuglog=true kernel.halt-on-panic=true kernel.debug_uart_poll=true";
+		bootargs = "kernel.bypass-debuglog=true kernel.halt-on-panic=true kernel.debug_uart_poll=true driver.usb.peripheral=cdc";
 	};
 
 	cpus {

@@ -76,3 +76,60 @@ endpoint/FIFO counts before any driver code depends on them.
    goes in the DTB bootargs.
 4. Host: `ip link` shows a CDC-ECM interface. Then `loglistener` and
    `netruncmd`.
+
+## Attempt 26: the mt-musb driver (first run)
+
+New in the fuchsia tree (all in `patches/fuchsia-lagos.patch`):
+
+- `src/devices/usb/drivers/mt-musb/`: a DFv2 `fuchsia.hardware.usb.dci`
+  driver.
+  - It is PIO only and has its own `fuchsia.hardware.usb.endpoint` server,
+    which maps registered VMOs instead of pinning them.
+  - It runs an ep0 state machine (SETUP / DATA IN / DATA OUT / STATUS, with
+    SET_ADDRESS applied after the status stage) plus bulk/interrupt
+    transfers through 512-byte FIFOs on ep1–5.
+  - It does the clock enables and the mt6768 PHY device-mode sequence,
+    including `U2PHYDTM1 = …0x3F2F`.
+  - `GetHardwareInfo` returns NOT_SUPPORTED, so usb-peripheral uses legacy
+    endpoint allocation.
+- `src/devices/bind/fuchsia.mediatek.platform`: VID MEDIATEK = 0x07 and
+  DID MUSB_PERIPHERAL.
+- `usb-peripheral.bind` gets a MEDIATEK branch.
+- `qemu-arm64/lagos-usb.cc` publishes the pbus node: MMIOs USB, PHY,
+  infracfg_ao and topckgen, plus IRQ 129 (SPI 97) level-high.
+- `boards/arm64/BUILD.gn` adds the driver to bootfs, and
+  `build/drivers/all_drivers_list.txt` allowlists it.
+- DTB v7 adds `driver.usb.peripheral=cdc`.
+- The console pins lines that mention `mt-musb`, `usb-peripheral`,
+  `usb-cdc` or `netsvc`.
+
+Result ([photo](img/attempt26-mt-musb-cycle.jpg)): **the driver binds and
+reads the real hardware.**
+
+```
+mt-musb: clocks CG0 0x0->0x0 CLK_CFG_5 0x1010201->0x1010201
+mt-musb: HWVERS 0xe5.. EPINFO 0x88 RAMINFO 0x8b POWER 0x21 DEVCTL 0x99
+mt-musb: started, waiting for usb-peripheral
+```
+
+- The clocks were already running: ICUSB is ungated and usb_top_sel is
+  powered with parent univpll3_d4, as LK left them.
+- EPINFO 0x88 means 8 TX + 8 RX endpoints, and RAMINFO 0x8b means 2^11
+  words = **8 KB of FIFO RAM**, both matching the research.
+- `POWER 0x21` and `DEVCTL 0x99` (session, B-device, VBUS) are the state
+  LK left behind.
+
+But usb-peripheral never started:
+
+```
+component_manager WARN: Failed to create child "mt-musb" in collection "boot-drivers" ...
+  dynamic offer would create a cycle; (child boot-drivers:mt-musb -> child boot-drivers:mt-musb)
+driver_manager ERROR: Failed to create child 'mt-musb': kDependencyCycle
+```
+
+The driver named its DCI child node `mt-musb`, the same as its own pdev
+node, so the usb-peripheral component and the mt-musb component collided
+on one name, and the UsbDciService offer pointed at itself. The host
+saw nothing past the preloader.
+
+**Attempt 27:** the child node is now `mt-musb-dci`.
